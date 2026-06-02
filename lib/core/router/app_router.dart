@@ -6,17 +6,33 @@ import '../../features/profile/profile_screen.dart';
 import '../../features/add_refund/add_refund_screen.dart';
 import '../../features/refund_detail/refund_detail_screen.dart';
 import '../../features/splash/splash_screen.dart';
+import '../../features/login/login_screen.dart';
+import '../../services/auth_service.dart';
 
 final GlobalKey<NavigatorState> _rootKey = GlobalKey<NavigatorState>();
 
 GoRouter createAppRouter() {
+  final auth = AuthService();
   return GoRouter(
     navigatorKey: _rootKey,
     initialLocation: '/',
+    redirect: (context, state) {
+      final isLoginRoute = state.matchedLocation == '/login';
+      final isSplash = state.matchedLocation == '/';
+      // Let splash and login through unconditionally
+      if (isSplash || isLoginRoute) return null;
+      // Guard everything else
+      if (!auth.isSignedIn) return '/login';
+      return null;
+    },
     routes: [
       GoRoute(
         path: '/',
         builder: (_, __) => const SplashScreen(),
+      ),
+      GoRoute(
+        path: '/login',
+        builder: (_, __) => const LoginScreen(),
       ),
       GoRoute(
         path: '/permissions',

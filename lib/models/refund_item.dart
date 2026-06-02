@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart' show Color;
+
 enum RefundStatus {
   processing,
   awaitingConfirmation,
@@ -17,6 +19,7 @@ class RefundItem {
     required this.amount,
     required this.status,
     required this.source,
+    this.currency = '₹',
     this.orderId,
     this.category,
     this.categoryLabel,
@@ -25,6 +28,7 @@ class RefundItem {
     this.detectedAt,
     this.refundIssuedAt,
     this.description,
+    this.manuallyCompleted = false,
   });
 
   final String id;
@@ -32,6 +36,8 @@ class RefundItem {
   final double amount;
   final RefundStatus status;
   final RefundSource source;
+  /// Currency symbol, e.g. ₹, $, €, £, ¥
+  final String currency;
   final String? orderId;
   final RefundCategory? category;
   /// Custom category name when preset categories don't fit (e.g. "Other").
@@ -42,6 +48,48 @@ class RefundItem {
   /// Date when the refund was issued.
   final DateTime? refundIssuedAt;
   final String? description;
+  /// True when the user has manually marked this refund as completed.
+  /// Sync will never downgrade the status back to processing.
+  final bool manuallyCompleted;
+
+  /// Formatted amount string, e.g. "₹499.00" or "$34.99"
+  String get formattedAmount => '$currency${amount.toStringAsFixed(2)}';
+
+  RefundItem copyWith({
+    String? id,
+    String? merchantName,
+    double? amount,
+    RefundStatus? status,
+    RefundSource? source,
+    String? currency,
+    String? orderId,
+    RefundCategory? category,
+    String? categoryLabel,
+    int? estimatedDays,
+    String? rawSnippet,
+    DateTime? detectedAt,
+    DateTime? refundIssuedAt,
+    String? description,
+    bool? manuallyCompleted,
+  }) {
+    return RefundItem(
+      id: id ?? this.id,
+      merchantName: merchantName ?? this.merchantName,
+      amount: amount ?? this.amount,
+      status: status ?? this.status,
+      source: source ?? this.source,
+      currency: currency ?? this.currency,
+      orderId: orderId ?? this.orderId,
+      category: category ?? this.category,
+      categoryLabel: categoryLabel ?? this.categoryLabel,
+      estimatedDays: estimatedDays ?? this.estimatedDays,
+      rawSnippet: rawSnippet ?? this.rawSnippet,
+      detectedAt: detectedAt ?? this.detectedAt,
+      refundIssuedAt: refundIssuedAt ?? this.refundIssuedAt,
+      description: description ?? this.description,
+      manuallyCompleted: manuallyCompleted ?? this.manuallyCompleted,
+    );
+  }
 
   /// Display category: custom label if set, otherwise enum label.
   String? get displayCategory => categoryLabel?.isNotEmpty == true ? categoryLabel : category?.label;
@@ -59,6 +107,45 @@ class RefundItem {
     }
   }
 
+  /// Short group label shown as a coloured badge.
+  String get statusBadgeLabel {
+    switch (status) {
+      case RefundStatus.processing:
+        return 'Processing';
+      case RefundStatus.awaitingConfirmation:
+      case RefundStatus.bankProcessing:
+        return 'Action Needed';
+      case RefundStatus.completed:
+        return 'Completed';
+    }
+  }
+
+  /// Foreground colour for the status badge text.
+  Color get statusColor {
+    switch (status) {
+      case RefundStatus.processing:
+        return const Color(0xFFD97706); // amber-600
+      case RefundStatus.awaitingConfirmation:
+      case RefundStatus.bankProcessing:
+        return const Color(0xFFDC2626); // red-600
+      case RefundStatus.completed:
+        return const Color(0xFF059669); // emerald-600
+    }
+  }
+
+  /// Light background tint for the badge.
+  Color get statusBgColor {
+    switch (status) {
+      case RefundStatus.processing:
+        return const Color(0xFFFEF3C7); // amber-100
+      case RefundStatus.awaitingConfirmation:
+      case RefundStatus.bankProcessing:
+        return const Color(0xFFFEE2E2); // red-100
+      case RefundStatus.completed:
+        return const Color(0xFFD1FAE5); // emerald-100
+    }
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -66,6 +153,7 @@ class RefundItem {
       'amount': amount,
       'status': status.name,
       'source': source.name,
+      'currency': currency,
       'orderId': orderId,
       'category': category?.name,
       'categoryLabel': categoryLabel,
@@ -74,6 +162,7 @@ class RefundItem {
       'detectedAt': detectedAt?.toIso8601String(),
       'refundIssuedAt': refundIssuedAt?.toIso8601String(),
       'description': description,
+      'manuallyCompleted': manuallyCompleted,
     };
   }
 
@@ -84,6 +173,7 @@ class RefundItem {
       amount: (json['amount'] as num).toDouble(),
       status: RefundStatus.values.byName(json['status'] as String),
       source: RefundSource.values.byName(json['source'] as String),
+      currency: json['currency'] as String? ?? '₹',
       orderId: json['orderId'] as String?,
       category: json['category'] != null
           ? RefundCategory.values.byName(json['category'] as String)
@@ -98,6 +188,7 @@ class RefundItem {
           ? DateTime.tryParse(json['refundIssuedAt'] as String)
           : null,
       description: json['description'] as String?,
+      manuallyCompleted: json['manuallyCompleted'] as bool? ?? false,
     );
   }
 }

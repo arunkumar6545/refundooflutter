@@ -1,9 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/app_logo.dart';
+import '../../services/auth_service.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final AuthService _auth = AuthService();
+  String _name = '';
+  String _email = '';
+  String? _photoUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUser();
+  }
+
+  Future<void> _loadUser() async {
+    final name = await _auth.cachedName;
+    final email = await _auth.cachedEmail;
+    final photo = await _auth.cachedPhotoUrl;
+    if (mounted) setState(() { _name = name; _email = email; _photoUrl = photo; });
+  }
+
+  Future<void> _signOut() async {
+    await _auth.signOut();
+    if (!mounted) return;
+    context.go('/login');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +44,14 @@ class ProfileScreen extends StatelessWidget {
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text('Profile'),
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppLogo(size: 30, borderRadius: 8, showGlow: false),
+            SizedBox(width: 8),
+            Text('Profile'),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 24),
@@ -29,13 +67,13 @@ class ProfileScreen extends StatelessWidget {
             _buildAvatar(context),
             const SizedBox(height: 8),
             Text(
-              'Alex Rivera',
+              _name.isNotEmpty ? _name : 'User',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             Text(
-              'alex.rivera@icloud.com',
+              _email.isNotEmpty ? _email : '',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    letterSpacing: 2,
+                    letterSpacing: 1,
                     color: AppColors.textMuted,
                   ),
             ),
@@ -47,8 +85,8 @@ class ProfileScreen extends StatelessWidget {
             _buildIntegrations(context),
             const SizedBox(height: 48),
             TextButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.logout, color: AppColors.textMuted, size: 20),
+              onPressed: _signOut,
+              icon: const Icon(Icons.logout, color: Colors.red, size: 20),
               label: const Text(
                 'Sign Out',
                 style: TextStyle(
@@ -96,7 +134,16 @@ class ProfileScreen extends StatelessWidget {
               ),
             ],
           ),
-          child: const Icon(Icons.person, size: 48, color: Colors.white70),
+          child: _photoUrl != null
+              ? ClipOval(
+                  child: Image.network(
+                    _photoUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.person, size: 48, color: Colors.white70),
+                  ),
+                )
+              : const Icon(Icons.person, size: 48, color: Colors.white70),
         ),
         Container(
           width: 28,

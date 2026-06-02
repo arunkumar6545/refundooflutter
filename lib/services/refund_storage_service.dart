@@ -30,11 +30,21 @@ class RefundStorageService {
   }
 
   /// Merges new items with existing (by id), then saves. Returns updated list.
+  /// If an existing item was manually completed, its status is preserved.
   Future<List<RefundItem>> mergeAndSave(List<RefundItem> newItems) async {
     final existing = await loadRefunds();
     final byId = {for (final r in existing) r.id: r};
     for (final r in newItems) {
-      byId[r.id] = r;
+      final prev = byId[r.id];
+      if (prev != null && prev.manuallyCompleted) {
+        // Keep completed status — user explicitly set this, sync must not revert it
+        byId[r.id] = r.copyWith(
+          status: RefundStatus.completed,
+          manuallyCompleted: true,
+        );
+      } else {
+        byId[r.id] = r;
+      }
     }
     final merged = byId.values.toList()
       ..sort((a, b) => (b.detectedAt ?? DateTime(0))

@@ -22,9 +22,18 @@ if (flutterVersionName == null) {
     flutterVersionName = "1.0"
 }
 
+// Release signing config
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withReader("UTF-8") { reader ->
+        keystoreProperties.load(reader)
+    }
+}
+
 android {
     namespace = "com.refundoo.refundoo"
-    compileSdk = 34
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -36,17 +45,28 @@ android {
         jvmTarget = JavaVersion.VERSION_1_8
     }
 
+    signingConfigs {
+        release {
+            keyAlias      = keystoreProperties["keyAlias"]
+            keyPassword   = keystoreProperties["keyPassword"]
+            storeFile     = keystoreProperties["storeFile"] ? file("${keystoreProperties["storeFile"]}") : null
+            storePassword = keystoreProperties["storePassword"]
+        }
+    }
+
     defaultConfig {
         applicationId = "com.refundoo.refundoo"
         minSdkVersion = flutter.minSdkVersion
-        targetSdk = 34
+        targetSdk = 36
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig = signingConfigs.release
+            minifyEnabled = false
+            shrinkResources = false
         }
     }
 }

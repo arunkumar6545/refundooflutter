@@ -2,32 +2,54 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/app_logo.dart';
 import '../../models/refund_item.dart';
 import '../../services/refund_storage_service.dart';
 import '../../services/sms_scanner_service.dart';
 import '../profile/profile_screen.dart';
 
-/// Background image URLs from stitch (Travel, Retail, Services) + generic images for extra categories.
-const _categoryBackgroundImages = {
-  RefundCategory.travel:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuBK4Z_XzClXNaVWowlc_xjCH4vYF93mVlx8P-nPIILHILvj0zQuNuEkqzMFa0X32NAVJX5EIkbVeI-YYeuCazdm7VbMZJekcnEWQmtggv4EgWL-jfZB7F5aU-PAYnuDTQEWbXBbtvbftvx92iWrRAcdTdaXwhn_8e_JRXWJatg4p1bTgWLrBR7rMEt7C-3c7N1a4uBlS0pGTxbwmIHwb0CzSPAswjkcwj3Ve-MwAOI6riIGKW0irh1K_QPgewjw0YysxoTwvk_CjDy1',
-  RefundCategory.retail:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuAk3WOQ35_cBDU5n36uEH3neFRK7a11ya5r2l1_PmoJ81WF-tIJsFBffOGhw5iYn92RzYS7FnRoFfOC5JNcAOomM3x2fMI9BMye4CwatVe7hS2Q2b7XR9VWWdxYFlPPhgkg_I62aCrNX0Dp6dG6b7OaPJci3C3FDmVOlv4YRbiZqFp6ZVR-ouUyoHQdT6aJFE589ziJ9YM2FzGesjYPNUcBq_4JMmdOfrB7_eE3OWoWex2DGRJhRsfTU7D_fwr8Oa3aYt5e0j-_4WUz',
-  RefundCategory.services:
-      'https://lh3.googleusercontent.com/aida-public/AB6AXuDe_lBbQqqGmdRQ_aA7V_ASfkbST_Pz5yeOh1Ro2hrg5cvtnEE_OUIClFG-NldguSw-4YDPyKKIISbb2ar0xG1YzDDWUzA9EywybJgOi5BoYV_a5MHMQeY4cOJSoX6tLCodGJ89aJc4ZUmWl_FxAKa7ao6rFswrwj8ZTTqcp_-8XtYU-LfdZMZMoceRtOMnY1YkT5t9yI0WdllNtLfQXrRyjiws_sV48jDQJ5HThzji_Gpj5G3jAXjdz4DoFy28-Ks8GfmwQEWAN_f-',
-  RefundCategory.foodDining:
-      'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800',
-  RefundCategory.electronics:
-      'https://images.unsplash.com/photo-1518770660439-4636190af475?w=800',
-  RefundCategory.entertainment:
-      'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800',
+/// Gradient backgrounds per category — no network dependency.
+const _categoryGradients = {
+  RefundCategory.travel: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
+  ),
+  RefundCategory.retail: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF6A1B9A), Color(0xFF4A148C)],
+  ),
+  RefundCategory.services: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF2E7D32), Color(0xFF1B5E20)],
+  ),
+  RefundCategory.foodDining: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFE65100), Color(0xFFBF360C)],
+  ),
+  RefundCategory.electronics: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF263238), Color(0xFF37474F)],
+  ),
+  RefundCategory.entertainment: LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFAD1457), Color(0xFF880E4F)],
+  ),
 };
 
-/// Fallback generic image when a category has no specific image.
-const _genericCategoryImage =
-    'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800';
+const _genericGradient = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [Color(0xFF004D40), Color(0xFF00695C)],
+);
 
 IconData _activityIconFor(RefundCategory? category) {
   switch (category) {
@@ -72,6 +94,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double get _pendingAmount {
     final pending = _refunds.where((r) => r.status != RefundStatus.completed);
     return pending.fold(0.0, (sum, r) => sum + r.amount);
+  }
+
+  /// The most common currency among pending refunds, or '₹' if none.
+  String get _pendingCurrency {
+    final pending = _refunds
+        .where((r) => r.status != RefundStatus.completed)
+        .map((r) => r.currency)
+        .toList();
+    if (pending.isEmpty) return '₹';
+    final freq = <String, int>{};
+    for (final c in pending) freq[c] = (freq[c] ?? 0) + 1;
+    return freq.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
   }
 
   int get _waitDays {
@@ -135,32 +169,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return list;
   }
 
-  List<({RefundCategory category, double amount, bool pending})> get _categories {
-    final byCategory = <RefundCategory, ({double total, bool hasPending})>{
-      RefundCategory.travel: (total: 0, hasPending: false),
-      RefundCategory.retail: (total: 0, hasPending: false),
-      RefundCategory.services: (total: 0, hasPending: false),
-      RefundCategory.foodDining: (total: 0, hasPending: false),
-      RefundCategory.electronics: (total: 0, hasPending: false),
-      RefundCategory.entertainment: (total: 0, hasPending: false),
+  List<({RefundCategory category, double amount, bool pending, String currency, int count})> get _categories {
+    final byCategory = <RefundCategory, ({double total, bool hasPending, Map<String, int> currencies, int count})>{
+      for (final c in RefundCategory.values)
+        c: (total: 0, hasPending: false, currencies: {}, count: 0),
     };
     for (final r in _refunds) {
       final cat = r.category ?? RefundCategory.retail;
-      final cur = byCategory[cat];
-      if (cur != null) {
-        byCategory[cat] = (
-          total: cur.total + r.amount,
-          hasPending: cur.hasPending || r.status != RefundStatus.completed,
-        );
-      }
+      final cur = byCategory[cat]!;
+      final cmap = Map<String, int>.from(cur.currencies);
+      cmap[r.currency] = (cmap[r.currency] ?? 0) + 1;
+      byCategory[cat] = (
+        total: cur.total + r.amount,
+        hasPending: cur.hasPending || r.status != RefundStatus.completed,
+        currencies: cmap,
+        count: cur.count + 1,
+      );
     }
-    return byCategory.entries
-        .map((e) => (
-              category: e.key,
-              amount: e.value.total,
-              pending: e.value.hasPending,
-            ))
-        .toList();
+    return byCategory.entries.map((e) {
+      final cmap = e.value.currencies;
+      final dominant = cmap.isEmpty
+          ? '₹'
+          : cmap.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+      return (
+        category: e.key,
+        amount: e.value.total,
+        pending: e.value.hasPending,
+        currency: dominant,
+        count: e.value.count,
+      );
+    }).toList();
   }
 
   @override
@@ -171,36 +209,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadRefunds() async {
     setState(() => _loading = true);
-    var list = await _storage.loadRefunds();
-    if (list.isEmpty) {
-      list = _defaultRefunds();
-      await _storage.saveRefunds(list);
+    // One-time migration: clear old seeded demo data (ids '1' and '2')
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool('_seeded_data_cleared') ?? false)) {
+      var list = await _storage.loadRefunds();
+      final cleaned = list.where((r) => r.id != '1' && r.id != '2').toList();
+      await _storage.saveRefunds(cleaned);
+      await prefs.setBool('_seeded_data_cleared', true);
     }
+    final list = await _storage.loadRefunds();
     setState(() {
       _refunds = list;
       _loading = false;
     });
-  }
-
-  List<RefundItem> _defaultRefunds() {
-    return [
-      const RefundItem(
-        id: '1',
-        merchantName: 'Amazon.com',
-        amount: 34.99,
-        status: RefundStatus.processing,
-        source: RefundSource.email,
-        category: RefundCategory.retail,
-      ),
-      const RefundItem(
-        id: '2',
-        merchantName: 'Delta Airlines',
-        amount: 245.00,
-        status: RefundStatus.awaitingConfirmation,
-        source: RefundSource.email,
-        category: RefundCategory.travel,
-      ),
-    ];
   }
 
   Future<void> _quickSync() async {
@@ -271,6 +292,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
                 ),
               )
+            else if (_filteredRefunds.isEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.receipt_long_outlined,
+                        size: 64,
+                        color: AppColors.textMuted.withValues(alpha: 0.4),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _refunds.isEmpty ? 'No refunds tracked yet' : 'No results',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: AppColors.textMuted,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _refunds.isEmpty
+                            ? 'Tap + to add one manually or use Quick Sync to scan SMS'
+                            : 'Try a different filter',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AppColors.textMuted.withValues(alpha: 0.7),
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              )
             else
               SliverList(
                 delegate: SliverChildBuilderDelegate(
@@ -310,10 +363,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
             onPressed: () => context.push('/profile'),
           ),
           Expanded(
-            child: Text(
-              'Dashboard',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleLarge,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const AppLogo(size: 28, borderRadius: 8, showGlow: false),
+                const SizedBox(width: 8),
+                Text(
+                  'Refundoo',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                ),
+              ],
             ),
           ),
           IconButton(
@@ -344,7 +406,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 const TextSpan(text: 'You have '),
                 TextSpan(
-                  text: '\$${_pendingAmount.toStringAsFixed(0)}',
+                  text: '$_pendingCurrency${_pendingAmount.toStringAsFixed(0)}',
                   style: const TextStyle(color: AppColors.primary),
                 ),
                 const TextSpan(text: ' on the way.'),
@@ -367,12 +429,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         children: [
-          Expanded(
+              Expanded(
             child: _BentoCard(
               icon: Icons.pending_actions_outlined,
               iconColor: AppColors.primary,
               label: 'Pending',
-              value: '\$${_pendingAmount.toStringAsFixed(2)}',
+              value: '$_pendingCurrency${_pendingAmount.toStringAsFixed(2)}',
               primary: true,
               onTap: () => setState(() {
                 _filterKind = _DashboardFilterKind.pending;
@@ -423,86 +485,69 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildCategoriesGrid(BuildContext context) {
     final cats = _categories;
-    double amountFor(RefundCategory c) {
-      return cats.where((x) => x.category == c).firstOrNull?.amount ?? 0;
+    double amountFor(RefundCategory c) =>
+        cats.where((x) => x.category == c).firstOrNull?.amount ?? 0;
+    bool pendingFor(RefundCategory c) =>
+        cats.where((x) => x.category == c).firstOrNull?.pending ?? false;
+    String currencyFor(RefundCategory c) =>
+        cats.where((x) => x.category == c).firstOrNull?.currency ?? '₹';
+    int countFor(RefundCategory c) =>
+        cats.where((x) => x.category == c).firstOrNull?.count ?? 0;
+    void onCategoryTap(RefundCategory c) => setState(() {
+          _filterKind = _DashboardFilterKind.category;
+          _filterCategory = c;
+        });
+
+    // Uniform 2-column grid: avoids overflow on narrow phones
+    final categories = [
+      RefundCategory.travel,
+      RefundCategory.retail,
+      RefundCategory.services,
+      RefundCategory.foodDining,
+      RefundCategory.electronics,
+      RefundCategory.entertainment,
+    ];
+
+    final rows = <Widget>[];
+    for (var i = 0; i < categories.length; i += 2) {
+      final left = categories[i];
+      final right = i + 1 < categories.length ? categories[i + 1] : null;
+      rows.add(
+        Row(
+          children: [
+            Expanded(
+              child: _CategoryBento(
+                category: left,
+                amount: amountFor(left),
+                count: countFor(left),
+                pending: pendingFor(left),
+                currencySymbol: currencyFor(left),
+                onTap: () => onCategoryTap(left),
+              ),
+            ),
+            if (right != null) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                child: _CategoryBento(
+                  category: right,
+                  amount: amountFor(right),
+                  count: countFor(right),
+                  pending: pendingFor(right),
+                  currencySymbol: currencyFor(right),
+                  onTap: () => onCategoryTap(right),
+                ),
+              ),
+            ] else
+              const Expanded(child: SizedBox()),
+          ],
+        ),
+      );
+      if (i + 2 < categories.length) rows.add(const SizedBox(height: 12));
     }
-    bool pendingFor(RefundCategory c) {
-      return cats.where((x) => x.category == c).firstOrNull?.pending ?? false;
-    }
-    void onCategoryTap(RefundCategory c) {
-      setState(() {
-        _filterKind = _DashboardFilterKind.category;
-        _filterCategory = c;
-      });
-    }
+
     return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 2,
-                child: _CategoryBento(
-                  category: RefundCategory.travel,
-                  amount: amountFor(RefundCategory.travel),
-                  pending: pendingFor(RefundCategory.travel),
-                  onTap: () => onCategoryTap(RefundCategory.travel),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _CategoryBento(
-                  category: RefundCategory.retail,
-                  amount: amountFor(RefundCategory.retail),
-                  pending: pendingFor(RefundCategory.retail),
-                  tall: true,
-                  onTap: () => onCategoryTap(RefundCategory.retail),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _CategoryBento(
-            category: RefundCategory.services,
-            amount: amountFor(RefundCategory.services),
-            pending: pendingFor(RefundCategory.services),
-            onTap: () => onCategoryTap(RefundCategory.services),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _CategoryBento(
-                  category: RefundCategory.foodDining,
-                  amount: amountFor(RefundCategory.foodDining),
-                  pending: pendingFor(RefundCategory.foodDining),
-                  onTap: () => onCategoryTap(RefundCategory.foodDining),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _CategoryBento(
-                  category: RefundCategory.electronics,
-                  amount: amountFor(RefundCategory.electronics),
-                  pending: pendingFor(RefundCategory.electronics),
-                  onTap: () => onCategoryTap(RefundCategory.electronics),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _CategoryBento(
-                  category: RefundCategory.entertainment,
-                  amount: amountFor(RefundCategory.entertainment),
-                  pending: pendingFor(RefundCategory.entertainment),
-                  onTap: () => onCategoryTap(RefundCategory.entertainment),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(children: rows),
     );
   }
 
@@ -559,24 +604,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildFilterChips(BuildContext context) {
-    final chips = ['All', 'Processing', 'Completed', 'Action Needed'];
+    final chips = <({String label, Color? color, Color? bg})>[
+      (label: 'All', color: null, bg: null),
+      (label: 'Processing', color: const Color(0xFFD97706), bg: const Color(0xFFFEF3C7)),
+      (label: 'Completed', color: const Color(0xFF059669), bg: const Color(0xFFD1FAE5)),
+      (label: 'Action Needed', color: const Color(0xFFDC2626), bg: const Color(0xFFFEE2E2)),
+    ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         children: chips.map((c) {
-          final selected = c == _chipFilter;
+          final selected = c.label == _chipFilter;
+          final isDark = Theme.of(context).brightness == Brightness.dark;
           return Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              label: Text(c, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-              selected: selected,
-              onSelected: (_) => setState(() => _chipFilter = c),
-              selectedColor: AppColors.primary,
-              backgroundColor: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white.withValues(alpha: 0.05)
-                  : AppColors.surfaceLight,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: GestureDetector(
+              onTap: () => setState(() => _chipFilter = c.label),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? (c.bg ?? AppColors.primary.withValues(alpha: 0.15))
+                      : (isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : AppColors.surfaceLight),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: selected
+                        ? (c.color ?? AppColors.primary).withValues(alpha: 0.4)
+                        : Colors.transparent,
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (c.color != null && selected) ...[
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: c.color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      c.label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: selected
+                            ? (c.color ?? AppColors.primary)
+                            : AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           );
         }).toList(),
@@ -678,31 +766,22 @@ class _CategoryBento extends StatelessWidget {
   const _CategoryBento({
     required this.category,
     required this.amount,
+    required this.count,
     required this.pending,
-    this.tall = false,
+    this.currencySymbol = '₹',
     this.onTap,
   });
 
   final RefundCategory category;
   final double amount;
+  final int count;
   final bool pending;
-  final bool tall;
+  final String currencySymbol;
   final VoidCallback? onTap;
-
-  static const _gradientOverlay = LinearGradient(
-    begin: Alignment.bottomCenter,
-    end: Alignment.topCenter,
-    colors: [
-      Color(0x99000000),
-      Color(0x00000000),
-    ],
-    stops: [0.0, 0.6],
-  );
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = _categoryBackgroundImages[category] ?? _genericCategoryImage;
-    final height = tall ? 200.0 : 100.0;
+    final gradient = _categoryGradients[category] ?? _genericGradient;
 
     return Material(
       color: Colors.transparent,
@@ -710,72 +789,97 @@ class _CategoryBento extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          height: height,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
+            gradient: gradient,
             boxShadow: [
               BoxShadow(
-                color: const Color(0x0D000000),
-                blurRadius: 20,
-                offset: const Offset(0, 4),
+                color: const Color(0x1A000000),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: Stack(
-              fit: StackFit.expand,
               children: [
-          Image.network(
-            imageUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-              color: const Color(0xFF1E3A5F),
-            ),
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Container(color: const Color(0xFF1E3A5F));
-            },
-          ),
-          DecoratedBox(
-            decoration: const BoxDecoration(gradient: _gradientOverlay),
-            child: const SizedBox.expand(),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      _iconForCategory(category),
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      category.label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+                Positioned.fill(
+                  child: CustomPaint(painter: _CategoryPatternPainter()),
                 ),
-                Text(
-                  pending ? '\$${amount.toStringAsFixed(2)} pending' : '\$${amount.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Icon(
+                          _iconForCategory(category),
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              category.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          if (count > 0)
+                            Container(
+                              margin: const EdgeInsets.only(left: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.22),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                '$count',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        amount > 0
+                            ? (pending
+                                ? '$currencySymbol${amount.toStringAsFixed(2)} pending'
+                                : '$currencySymbol${amount.toStringAsFixed(2)}')
+                            : 'No refunds',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
               ],
             ),
           ),
@@ -808,29 +912,51 @@ class _ActivityTile extends StatelessWidget {
   final RefundItem item;
   final VoidCallback onTap;
 
+  String _formatDate(DateTime? dt) {
+    if (dt == null) return '';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final d = DateTime(dt.year, dt.month, dt.day);
+    if (d == today) return 'Today';
+    if (d == today.subtract(const Duration(days: 1))) return 'Yesterday';
+    return DateFormat('d MMM yyyy').format(dt);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final date = _formatDate(item.detectedAt ?? item.refundIssuedAt);
+    final hasOrderId = item.orderId?.isNotEmpty == true;
+    final metaText = [
+      if (date.isNotEmpty) date,
+      if (hasOrderId) '#${item.orderId}',
+    ].join('  ·  ');
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
       child: Material(
-        color: Theme.of(context).brightness == Brightness.dark
+        color: isDark
             ? Colors.white.withValues(alpha: 0.05)
-            : AppColors.surfaceLight,
+            : Colors.white,
         borderRadius: BorderRadius.circular(16),
+        elevation: isDark ? 0 : 1,
+        shadowColor: Colors.black.withValues(alpha: 0.06),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                // Category icon
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white.withValues(alpha: 0.1)
-                        : Colors.white,
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : AppColors.primary.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -839,32 +965,128 @@ class _ActivityTile extends StatelessWidget {
                     size: 22,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
+
+                // Middle: merchant + meta
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         item.merchantName,
-                        style: Theme.of(context).textTheme.titleSmall,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      Text(
-                        item.statusLabel,
-                        style: Theme.of(context).textTheme.labelSmall,
-                      ),
+                      if (metaText.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          metaText,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textMuted,
+                            letterSpacing: 0.1,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                Text(
-                  '\$${item.amount.toStringAsFixed(2)}',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: AppColors.textMuted,
-                      ),
+                const SizedBox(width: 10),
+
+                // Right: amount + status badge (+ M tag if manually completed)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      item.formattedAmount,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3,
+                          ),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (item.manuallyCompleted) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.success.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: AppColors.success.withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: const Text(
+                              'M',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.success,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                        ],
+                        _StatusBadge(item: item),
+                      ],
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.item});
+  final RefundItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: item.statusBgColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: item.statusColor.withValues(alpha: 0.45),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: item.statusColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            item.statusBadgeLabel,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: item.statusColor,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -931,4 +1153,19 @@ class _QuickSyncButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Draws subtle decorative circles in the top-right of category cards.
+class _CategoryPatternPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0x18FFFFFF)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(size.width + 10, -10), 60, paint);
+    canvas.drawCircle(Offset(size.width - 20, size.height * 0.3), 30, paint);
+  }
+
+  @override
+  bool shouldRepaint(_CategoryPatternPainter oldDelegate) => false;
 }

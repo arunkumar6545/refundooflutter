@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:permission_handler/permission_handler.dart';
+import 'package:telephony/telephony.dart';
 
 import '../models/refund_item.dart';
 import 'refund_detection_service.dart';
@@ -9,6 +10,7 @@ import 'refund_detection_service.dart';
 /// Android only; iOS does not allow reading SMS.
 class SmsScannerService {
   final RefundDetectionService _detection = RefundDetectionService();
+  final Telephony _telephony = Telephony.instance;
 
   Future<bool> requestPermission() async {
     if (!Platform.isAndroid) return false;
@@ -22,21 +24,36 @@ class SmsScannerService {
     return await Permission.sms.isGranted;
   }
 
-  /// Returns refund items parsed from SMS. Uses telephony on Android when available.
+  /// Returns refund items parsed from the SMS inbox.
   Future<List<RefundItem>> scanInbox() async {
     if (!Platform.isAndroid) return [];
     final granted = await requestPermission();
     if (!granted) return [];
 
-    // Telephony package would be used here. For a new project we avoid
-    // triggering platform code without Flutter run; return mock for now.
-    // Example with telephony:
-    // final telephony = Telephony.instance;
-    // final messages = await telephony.getInboxSms(columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE]);
-    // for (final msg in messages) {
-    //   final item = _detection.parseRefund(id: msg.id ?? '', sourceText: msg.body ?? '', sender: msg.address, source: RefundSource.sms, date: msg.date != null ? DateTime.fromMillisecondsSinceEpoch(msg.date!) : null);
-    //   if (item != null) results.add(item);
-    // }
-    return [];
+    final results = <RefundItem>[];
+    try {
+      final messages = await _telephony.getInboxSms(
+        columns: [SmsColumn.ID, SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
+      );
+      for (final msg in messages) {
+        final body = msg.body ?? '';
+        final sender = msg.address ?? 'Unknown';
+        final id = 'sms_${msg.id ?? DateTime.now().millisecondsSinceEpoch}';
+        final date = msg.date != null
+            ? DateTime.fromMillisecondsSinceEpoch(msg.date!)
+            : DateTime.now();
+        final item = _detection.parseRefund(
+          id: id,
+          sourceText: body,
+          sender: sender,
+          source: RefundSource.sms,
+          date: date,
+        );
+        if (item != null) results.add(item);
+      }
+    } catch (_) {
+      // SMS read failed silently — user will see 0 new results
+    }
+    return results;
   }
 }

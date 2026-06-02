@@ -44,6 +44,10 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Gradle caches
+android/.gradle/
+.gradle/
+
 # Signing keys (never commit)
 android/key.properties
 *.jks

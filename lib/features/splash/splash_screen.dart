@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/widgets/app_logo.dart';
+import '../../services/auth_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -18,15 +20,22 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _navigate() async {
-    await Future.delayed(const Duration(milliseconds: 1800));
+    // Restore Google session + load prefs in parallel
+    final results = await Future.wait([
+      AuthService().restoreSession(),
+      SharedPreferences.getInstance(),
+      Future.delayed(const Duration(milliseconds: 1600)),
+    ]);
     if (!mounted) return;
-    final prefs = await SharedPreferences.getInstance();
-    final hasCompletedSetup = prefs.getBool('has_completed_setup') ?? false;
-    if (hasCompletedSetup) {
-      context.go('/dashboard');
-    } else {
-      context.go('/permissions');
+    final isSignedIn = results[0] as bool;
+    final prefs = results[1] as SharedPreferences;
+
+    if (!isSignedIn) {
+      context.go('/login');
+      return;
     }
+    final hasCompletedSetup = prefs.getBool('has_completed_setup') ?? false;
+    context.go(hasCompletedSetup ? '/dashboard' : '/permissions');
   }
 
   @override
@@ -39,26 +48,7 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.4),
-                    blurRadius: 24,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.receipt_long_rounded,
-                size: 48,
-                color: AppColors.textPrimary,
-              ),
-            ),
+            const AppLogo(size: 100, borderRadius: 28),
             const SizedBox(height: 24),
             Text(
               'Refundoo',

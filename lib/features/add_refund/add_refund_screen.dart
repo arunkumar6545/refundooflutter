@@ -21,7 +21,10 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
   RefundCategory? _presetCategory = RefundCategory.retail;
   bool _isOtherCategory = false;
   DateTime? _refundIssuedAt;
+  String _currency = '₹';
   final RefundStorageService _storage = RefundStorageService();
+
+  static const _currencies = ['₹', '\$', '€', '£', '¥'];
 
   @override
   void dispose() {
@@ -67,6 +70,7 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
       amount: amount,
       status: RefundStatus.processing,
       source: RefundSource.email,
+      currency: _currency,
       orderId: orderId,
       category: _isOtherCategory ? null : _presetCategory,
       categoryLabel: _isOtherCategory ? _customCategoryController.text.trim() : null,
@@ -179,18 +183,52 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        'Refund amount (\$)',
+                        'Refund amount',
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               color: AppColors.textMuted,
                             ),
                       ),
                       const SizedBox(height: 8),
+                      // Currency selector chips
+                      Wrap(
+                        spacing: 8,
+                        children: _currencies.map((c) {
+                          final selected = c == _currency;
+                          return ChoiceChip(
+                            label: Text(c,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: selected ? Colors.white : null,
+                                )),
+                            selected: selected,
+                            onSelected: (_) => setState(() => _currency = c),
+                            selectedColor: AppColors.primary,
+                            backgroundColor: isDark
+                                ? Colors.white.withValues(alpha: 0.05)
+                                : AppColors.surfaceLight,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 12),
                       TextFormField(
                         controller: _amountController,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: InputDecoration(
                           hintText: '0.00',
-                          prefixIcon: const Icon(Icons.attach_money, color: AppColors.primary, size: 22),
+                          prefixIcon: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            child: Text(
+                              _currency,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          prefixIconConstraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),

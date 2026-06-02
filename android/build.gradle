@@ -9,6 +9,32 @@ rootProject.buildDir = "../build"
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
+// AGP 8+ requires namespace on library modules; set when missing (e.g. telephony). Register before evaluationDependsOn.
+def libNamespaces = [
+    "telephony": "com.shounakmulay.telephony"
+]
+subprojects { subproject ->
+    subproject.afterEvaluate {
+        if (subproject.plugins.hasPlugin("com.android.library")) {
+            def android = subproject.extensions.findByName("android")
+            if (android != null) {
+                if (android.namespace == null || android.namespace.isEmpty()) {
+                    def pkg = libNamespaces[subproject.name]
+                    if (pkg == null && subproject.file("src/main/AndroidManifest.xml").exists()) {
+                        def root = new XmlSlurper().parse(subproject.file("src/main/AndroidManifest.xml"))
+                        try { pkg = root.@'package'.toString() } catch (Exception e) { }
+                    }
+                    if (pkg != null && !pkg.isEmpty()) {
+                        android.namespace = pkg
+                    }
+                }
+                try {
+                    android.compileSdk = 36
+                } catch (Exception e) { }
+            }
+        }
+    }
+}
 subprojects {
     project.evaluationDependsOn(":app")
 }
