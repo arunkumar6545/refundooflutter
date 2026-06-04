@@ -365,6 +365,50 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 16),
+            // ── Overdue warning banner ───────────────────────────────────
+            if (refund.isOverdue) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFB91C1C).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: const Color(0xFFB91C1C).withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        color: Color(0xFFB91C1C), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Refund Overdue',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFB91C1C),
+                            ),
+                          ),
+                          Text(
+                            'Expected within ${refund.expectedDays} days · '
+                            '${refund.overdueDays} day${refund.overdueDays == 1 ? '' : 's'} past deadline',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: const Color(0xFFB91C1C).withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
             // ── Refund source info card ──────────────────────────────────
             _RefundInfoCard(refund: refund, onEditCurrency: () => _showCurrencyPicker(context)),
             const SizedBox(height: 20),

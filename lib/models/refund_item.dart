@@ -97,6 +97,23 @@ class RefundItem {
   /// Formatted amount string, e.g. "₹499.00" or "$34.99"
   String get formattedAmount => '$currency${amount.toStringAsFixed(2)}';
 
+  /// How many days this refund has been waiting (since detectedAt).
+  int get waitingDays {
+    final since = detectedAt ?? refundIssuedAt;
+    if (since == null) return 0;
+    return DateTime.now().difference(since).inDays;
+  }
+
+  /// Threshold: estimatedDays from the message, or 7 if not detected.
+  int get expectedDays => estimatedDays ?? 7;
+
+  /// True when a non-completed refund has been waiting longer than expected.
+  bool get isOverdue =>
+      status != RefundStatus.completed && waitingDays > expectedDays;
+
+  /// Days past the promised deadline (positive = overdue, negative = still within window).
+  int get overdueDays => waitingDays - expectedDays;
+
   RefundItem copyWith({
     String? id,
     String? merchantName,

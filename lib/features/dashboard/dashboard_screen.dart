@@ -168,7 +168,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         break;
     }
 
-    // Then apply status chip filter (All, Processing, Completed, Action Needed)
+    // Then apply status chip filter (All, Processing, Completed, Action Needed, Overdue)
     switch (_chipFilter) {
       case 'Processing':
         list = list.where((r) => r.status == RefundStatus.processing).toList();
@@ -182,6 +182,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 r.status == RefundStatus.awaitingConfirmation ||
                 r.status == RefundStatus.bankProcessing)
             .toList();
+        break;
+      case 'Overdue':
+        list = list.where((r) => r.isOverdue).toList();
         break;
       default:
         break;
@@ -201,7 +204,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final cmap = Map<String, int>.from(cur.currencies);
       cmap[r.currency] = (cmap[r.currency] ?? 0) + 1;
       byCategory[cat] = (
-        total: cur.total + r.amount,
+        total: cur.total + (r.status != RefundStatus.completed ? r.amount : 0),
         hasPending: cur.hasPending || r.status != RefundStatus.completed,
         currencies: cmap,
         count: cur.count + 1,
@@ -650,11 +653,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildFilterChips(BuildContext context) {
+    final overdueCount = _refunds.where((r) => r.isOverdue).length;
     final chips = <({String label, Color? color, Color? bg})>[
       (label: 'All', color: null, bg: null),
       (label: 'Processing', color: const Color(0xFFD97706), bg: const Color(0xFFFEF3C7)),
       (label: 'Completed', color: const Color(0xFF059669), bg: const Color(0xFFD1FAE5)),
       (label: 'Action Needed', color: const Color(0xFFDC2626), bg: const Color(0xFFFEE2E2)),
+      (label: 'Overdue', color: const Color(0xFFB91C1C), bg: const Color(0xFFFEE2E2)),
     ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -663,6 +668,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: chips.map((c) {
           final selected = c.label == _chipFilter;
           final isDark = Theme.of(context).brightness == Brightness.dark;
+          final isOverdueChip = c.label == 'Overdue';
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
@@ -680,7 +686,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   border: Border.all(
                     color: selected
                         ? (c.color ?? AppColors.primary).withValues(alpha: 0.4)
-                        : Colors.transparent,
+                        : (isOverdueChip && overdueCount > 0
+                            ? const Color(0xFFB91C1C).withValues(alpha: 0.35)
+                            : Colors.transparent),
                     width: 1.5,
                   ),
                 ),
@@ -705,9 +713,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         fontWeight: FontWeight.w700,
                         color: selected
                             ? (c.color ?? AppColors.primary)
-                            : AppColors.textMuted,
+                            : (isOverdueChip && overdueCount > 0
+                                ? const Color(0xFFB91C1C)
+                                : AppColors.textMuted),
                       ),
                     ),
+                    // Count badge on Overdue chip
+                    if (isOverdueChip && overdueCount > 0) ...[
+                      const SizedBox(width: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFB91C1C),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '$overdueCount',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -990,103 +1020,137 @@ class _ActivityTile extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Category icon
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.08)
-                        : AppColors.primary.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
+          child: Container(
+            decoration: item.isOverdue
+                ? BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(0xFFB91C1C).withValues(alpha: 0.35),
+                      width: 1.5,
+                    ),
+                  )
+                : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Category icon
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: item.isOverdue
+                          ? const Color(0xFFB91C1C).withValues(alpha: 0.1)
+                          : (isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : AppColors.primary.withValues(alpha: 0.1)),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _activityIconFor(item.category),
+                      color: item.isOverdue
+                          ? const Color(0xFFB91C1C)
+                          : AppColors.primary,
+                      size: 22,
+                    ),
                   ),
-                  child: Icon(
-                    _activityIconFor(item.category),
-                    color: AppColors.primary,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 12),
+                  const SizedBox(width: 12),
 
-                // Middle: merchant + meta
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.merchantName,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (metaText.isNotEmpty) ...[
-                        const SizedBox(height: 3),
+                  // Middle: merchant + meta
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          metaText,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textMuted,
-                            letterSpacing: 0.1,
-                          ),
+                          item.merchantName,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        if (metaText.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            metaText,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textMuted,
+                              letterSpacing: 0.1,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        if (item.isOverdue) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.warning_amber_rounded,
+                                  size: 12, color: Color(0xFFB91C1C)),
+                              const SizedBox(width: 3),
+                              Text(
+                                '${item.overdueDays} day${item.overdueDays == 1 ? '' : 's'} overdue',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFB91C1C),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+
+                  // Right: amount + status badge (+ M tag if manually completed)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        item.formattedAmount,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.3,
+                            ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (item.manuallyCompleted) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppColors.success.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: AppColors.success.withValues(alpha: 0.4),
+                                ),
+                              ),
+                              child: const Text(
+                                'M',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.success,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                          ],
+                          _StatusBadge(item: item),
+                        ],
+                      ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 10),
-
-                // Right: amount + status badge (+ M tag if manually completed)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      item.formattedAmount,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
-                          ),
-                    ),
-                    const SizedBox(height: 5),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (item.manuallyCompleted) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: AppColors.success.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: AppColors.success.withValues(alpha: 0.4),
-                              ),
-                            ),
-                            child: const Text(
-                              'M',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.success,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                        ],
-                        _StatusBadge(item: item),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
