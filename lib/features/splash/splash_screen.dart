@@ -146,14 +146,16 @@ class _SplashScreenState extends State<SplashScreen>
         canPop: false, // lock back button during sync
         child: SafeArea(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const Spacer(flex: 2),
 
               // ── Logo ──────────────────────────────────────────────────────
-              const AppLogo(size: 96, borderRadius: 26),
+              const Center(child: AppLogo(size: 96, borderRadius: 26)),
               const SizedBox(height: 20),
               Text(
                 'Refundoo',
+                textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: Theme.of(context).colorScheme.onSurface,
@@ -163,22 +165,26 @@ class _SplashScreenState extends State<SplashScreen>
               const Spacer(flex: 1),
 
               // ── Central animation area ─────────────────────────────────────
-              SizedBox(
-                width: 200,
-                height: 200,
-                child: _phase == _Phase.done
-                    ? _DoneWidget(controller: _checkCtrl, count: _newCount)
-                    : _phase == _Phase.syncing
-                        ? _RadarWidget(controller: _radarCtrl)
-                        : _LoadingSpinner(),
+              Center(
+                child: SizedBox(
+                  width: 200,
+                  height: 200,
+                  child: _phase == _Phase.done
+                      ? _DoneWidget(controller: _checkCtrl, count: _newCount)
+                      : _phase == _Phase.syncing
+                          ? _RadarWidget(controller: _radarCtrl)
+                          : _LoadingSpinner(),
+                ),
               ),
 
               const SizedBox(height: 28),
 
               // ── Status text ───────────────────────────────────────────────
-              FadeTransition(
-                opacity: _textCtrl,
-                child: _StatusText(phase: _phase, count: _newCount),
+              Center(
+                child: FadeTransition(
+                  opacity: _textCtrl,
+                  child: _StatusText(phase: _phase, count: _newCount),
+                ),
               ),
 
               const Spacer(flex: 3),
@@ -317,9 +323,11 @@ class _StatusText extends StatelessWidget {
     };
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           title,
+          textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w700,
                 color: phase == _Phase.done && count > 0
@@ -331,6 +339,7 @@ class _StatusText extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             subtitle,
+            textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: AppColors.textMuted,
                 ),
