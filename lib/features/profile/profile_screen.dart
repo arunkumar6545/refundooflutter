@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_logo.dart';
 import '../../services/auth_service.dart';
+import '../../services/email_scanner_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -13,21 +15,48 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final AuthService _auth = AuthService();
+  final EmailScannerService _emailScanner = EmailScannerService();
   String _name = '';
   String _email = '';
   String? _photoUrl;
+  bool _smsEnabled = false;
+  bool _emailSyncEnabled = false;
+  String? _approvedEmailAccount;
+  bool _isGuest = false;
 
   @override
   void initState() {
     super.initState();
     _loadUser();
+    _loadSyncStatus();
   }
 
   Future<void> _loadUser() async {
     final name = await _auth.cachedName;
     final email = await _auth.cachedEmail;
     final photo = await _auth.cachedPhotoUrl;
-    if (mounted) setState(() { _name = name; _email = email; _photoUrl = photo; });
+    final guest = await _auth.isGuest;
+    if (mounted) {
+      setState(() {
+        _name = name;
+        _email = email;
+        _photoUrl = photo;
+        _isGuest = guest;
+      });
+    }
+  }
+
+  Future<void> _loadSyncStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final emailEnabled = await _emailScanner.isEnabled;
+    final approvedEmail = await _emailScanner.approvedAccount;
+    if (mounted) {
+      setState(() {
+        _smsEnabled = prefs.getBool('sms_enabled') ?? false;
+        _emailSyncEnabled = emailEnabled;
+        _approvedEmailAccount = approvedEmail;
+      });
+    }
   }
 
   Future<void> _signOut() async {
@@ -54,8 +83,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings_outlined, size: 24),
-            onPressed: () {},
+            icon: const Icon(Icons.tune_outlined, size: 24),
+            onPressed: () => context.push('/permissions'),
+            tooltip: 'Sync settings',
           ),
         ],
       ),
@@ -71,28 +101,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             Text(
-              _email.isNotEmpty ? _email : '',
+              _email.isNotEmpty ? _email : (_isGuest ? 'Guest' : ''),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     letterSpacing: 1,
                     color: AppColors.textMuted,
                   ),
             ),
             const SizedBox(height: 32),
+            _buildSyncSection(context),
+            const SizedBox(height: 24),
             _buildPersonaBadge(context),
-            const SizedBox(height: 24),
-            _buildSecurityGrid(context),
-            const SizedBox(height: 24),
-            _buildIntegrations(context),
             const SizedBox(height: 48),
             TextButton.icon(
               onPressed: _signOut,
               icon: const Icon(Icons.logout, color: Colors.red, size: 20),
               label: const Text(
                 'Sign Out',
-                style: TextStyle(
-                  color: Colors.red,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700),
               ),
             ),
             const SizedBox(height: 8),
@@ -145,18 +170,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 )
               : const Icon(Icons.person, size: 48, color: Colors.white70),
         ),
-        Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            color: AppColors.primary,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              width: 2,
+      ],
+    );
+  }
+
+  Widget _buildSyncSection(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Sync & Permissions',
+                style: Theme.of(context).textTheme.titleLarge),
+            TextButton(
+              onPressed: () async {
+                await context.push('/permissions');
+                _loadSyncStatus();
+              },
+              child: const Text('Manage'),
             ),
-          ),
-          child: const Icon(Icons.edit, size: 14, color: AppColors.textPrimary),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // SMS Sync card
+        _SyncStatusCard(
+          icon: Icons.sms_outlined,
+          iconColor: _smsEnabled
+              ? AppColors.success
+              : AppColors.textMuted,
+          title: 'SMS Sync',
+          status: _smsEnabled ? 'Active' : 'Disabled',
+          statusColor: _smsEnabled ? AppColors.success : AppColors.textMuted,
+          detail: _smsEnabled
+              ? 'Scanning all incoming refund SMS'
+              : 'Enable in sync settings to scan SMS',
+          isDark: isDark,
+        ),
+        const SizedBox(height: 12),
+
+        // Email Sync card
+        _SyncStatusCard(
+          icon: Icons.mail_outline,
+          iconColor: _emailSyncEnabled
+              ? AppColors.primary
+              : AppColors.textMuted,
+          title: 'Gmail Sync',
+          status: _emailSyncEnabled ? 'Active' : 'Disabled',
+          statusColor: _emailSyncEnabled ? AppColors.primary : AppColors.textMuted,
+          detail: _emailSyncEnabled
+              ? 'Scanning last 30 days'
+              : 'Enable in sync settings',
+          isDark: isDark,
+          badge: _emailSyncEnabled && _approvedEmailAccount != null
+              ? _approvedEmailAccount!
+              : null,
         ),
       ],
     );
@@ -204,11 +274,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
           ),
           const SizedBox(height: 12),
-          Container(
-            width: 48,
-            height: 2,
-            color: AppColors.primary,
-          ),
+          Container(width: 48, height: 2, color: AppColors.primary),
           const SizedBox(height: 12),
           Text(
             'You tend to request refunds for apparel most frequently, showing a preference for high-end fit precision and quality testing.',
@@ -219,118 +285,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildSecurityGrid(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Security & Access',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 12),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 2,
-              child: _ProfileCard(
-                icon: Icons.verified_user_outlined,
-                iconColor: Colors.blue,
-                title: 'Security Audit',
-                subtitle: '2FA & Bio-auth enabled',
-                badge: 'ACTIVE',
-                color: AppColors.pastelBlue,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _ProfileCard(
-                icon: Icons.notifications_active_outlined,
-                iconColor: Colors.purple,
-                title: '12',
-                subtitle: 'Alerts',
-                color: AppColors.pastelPurple,
-                compact: true,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _ProfileCard(
-          icon: Icons.account_balance_wallet_outlined,
-          iconColor: Colors.green,
-          title: 'Vault Access',
-          subtitle: '3 Linked Institutions',
-          color: AppColors.pastelGreen,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildIntegrations(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Integrations',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? Colors.white.withValues(alpha: 0.05)
-                : const Color(0xFFF9FAFB),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white.withValues(alpha: 0.1)
-                  : const Color(0xFFF3F4F6),
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xFF1A2E2E)
-                      : Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.alternate_email,
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? AppColors.primary
-                      : AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Smart Receipt Parser',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    Text(
-                      'Email Sync Enabled',
-                      style: Theme.of(context).textTheme.labelSmall,
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right, color: AppColors.textMuted),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
@@ -351,100 +305,130 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-class _ProfileCard extends StatelessWidget {
-  const _ProfileCard({
+/// A card that shows the live status of a single sync source.
+class _SyncStatusCard extends StatelessWidget {
+  const _SyncStatusCard({
     required this.icon,
+    required this.iconColor,
     required this.title,
-    required this.subtitle,
-    required this.color,
-    this.iconColor,
+    required this.status,
+    required this.statusColor,
+    required this.detail,
+    required this.isDark,
     this.badge,
-    this.compact = false,
   });
 
   final IconData icon;
+  final Color iconColor;
   final String title;
-  final String subtitle;
-  final Color color;
-  final Color? iconColor;
+  final String status;
+  final Color statusColor;
+  final String detail;
+  final bool isDark;
   final String? badge;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(24),
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.white,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: (iconColor ?? AppColors.primary).withValues(alpha: 0.2),
+          color: statusColor.withValues(alpha: 0.2),
+          width: 1.5,
         ),
       ),
-      child: compact
-          ? Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, size: 40, color: iconColor ?? AppColors.primary),
-                const SizedBox(height: 8),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                ),
-                Text(
-                  subtitle,
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ],
-            )
-          : Column(
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: iconColor, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
+                    Text(title,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 8),
                     Container(
-                      width: 48,
-                      height: 48,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.white.withValues(alpha: 0.1)
-                            : Colors.white,
-                        borderRadius: BorderRadius.circular(16),
+                        color: statusColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: statusColor.withValues(alpha: 0.3)),
                       ),
-                      child: Icon(icon, color: iconColor ?? AppColors.primary, size: 24),
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: statusColor,
+                        ),
+                      ),
                     ),
-                    if (badge != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: (iconColor ?? Colors.blue).withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          badge!,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: iconColor ?? Colors.blue,
-                          ),
-                        ),
-                      ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 3),
                 Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  detail,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textMuted,
+                      ),
                 ),
-                Text(
-                  subtitle,
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
+                if (badge != null) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.2)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.account_circle_outlined,
+                            size: 12, color: AppColors.primary),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            badge!,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -463,20 +447,14 @@ class _NavItem extends StatelessWidget {
       icon: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            size: 28,
-            color: active ? AppColors.primary : AppColors.textMuted,
-          ),
+          Icon(icon, size: 28,
+              color: active ? AppColors.primary : AppColors.textMuted),
           if (active) const SizedBox(height: 4),
           if (active)
             Container(
-              width: 4,
-              height: 4,
+              width: 4, height: 4,
               decoration: const BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-              ),
+                  color: AppColors.primary, shape: BoxShape.circle),
             ),
         ],
       ),

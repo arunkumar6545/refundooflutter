@@ -12,6 +12,9 @@ class AuthService {
   static const _keyEmail = 'auth_email';
   static const _keyPhoto = 'auth_photo';
 
+  static const _gmailScope =
+      'https://www.googleapis.com/auth/gmail.readonly';
+
   final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
 
   GoogleSignInAccount? _currentUser;
@@ -21,6 +24,28 @@ class AuthService {
 
   /// True when signed in with Google OR continuing as guest.
   bool get isSignedIn => _currentUser != null || _isGuest;
+
+  /// Request Gmail readonly scope for the current signed-in account.
+  /// Returns true when the scope is granted.
+  Future<bool> requestGmailScope() async {
+    if (_currentUser == null) return false;
+    try {
+      final granted = await _googleSignIn.requestScopes([_gmailScope]);
+      return granted;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// True when the current account has the Gmail readonly scope.
+  Future<bool> get hasGmailScope async {
+    if (_currentUser == null) return false;
+    try {
+      return await GoogleSignIn(scopes: [_gmailScope]).isSignedIn();
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Restore persisted session from SharedPreferences on app start.
   Future<bool> restoreSession() async {

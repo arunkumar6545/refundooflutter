@@ -9,6 +9,8 @@ import '../../core/widgets/app_logo.dart';
 import '../../models/refund_item.dart';
 import '../../services/refund_storage_service.dart';
 import '../../services/sms_scanner_service.dart';
+import '../../services/email_scanner_service.dart';
+import '../../services/auth_service.dart';
 import '../profile/profile_screen.dart';
 
 /// Gradient backgrounds per category — no network dependency.
@@ -83,6 +85,8 @@ enum _DashboardFilterKind { all, pending, waitTime, category }
 class _DashboardScreenState extends State<DashboardScreen> {
   final RefundStorageService _storage = RefundStorageService();
   final SmsScannerService _smsScanner = SmsScannerService();
+  final EmailScannerService _emailScanner = EmailScannerService();
+  final AuthService _auth = AuthService();
 
   List<RefundItem> _refunds = [];
   bool _loading = true;
@@ -252,15 +256,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _quickSync() async {
     setState(() => _syncing = true);
     final prefs = await SharedPreferences.getInstance();
-    final smsEnabled = prefs.getBool('sms_enabled') ?? false;
     var newCount = 0;
+
+    // ── SMS scan (all messages) ──────────────────────────────────────────
+    final smsEnabled = prefs.getBool('sms_enabled') ?? false;
     if (smsEnabled && Platform.isAndroid) {
       final fromSms = await _smsScanner.scanInbox();
-      newCount = fromSms.length;
-      if (fromSms.isNotEmpty) {
-        await _storage.mergeAndSave(fromSms);
-      }
+      newCount += fromSms.length;
+      if (fromSms.isNotEmpty) await _storage.mergeAndSave(fromSms);
     }
+
+    // ── Email scan (last 30 days) ────────────────────────────────────────
+    final emailEnabled = await _emailScanner.isEnabled;
+    if (emailEnabled && _auth.currentUser != null) {
+      final fromEmail = await _emailScanner.scanInbox();
+      newCount += fromEmail.length;
+      if (fromEmail.isNotEmpty) await _storage.mergeAndSave(fromEmail);
+    }
+
     final merged = await _storage.loadRefunds();
     if (!mounted) return;
     setState(() {
@@ -272,7 +285,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         content: Text(
           newCount > 0
               ? 'Found $newCount refund(s). All data saved locally.'
-              : 'Refunds loaded from local storage. No new SMS refunds this time.',
+              : 'No new refunds found this time.',
         ),
         behavior: SnackBarBehavior.floating,
       ),

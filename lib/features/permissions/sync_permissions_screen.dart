@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
+import '../../services/auth_service.dart';
+import '../../services/email_scanner_service.dart';
 
 class SyncPermissionsScreen extends StatefulWidget {
   const SyncPermissionsScreen({super.key});
@@ -17,6 +19,10 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
   bool _smsEnabled = true;
   bool _emailEnabled = false;
   bool _loadingPrefs = true;
+  String? _approvedEmailAccount;
+
+  final AuthService _auth = AuthService();
+  final EmailScannerService _emailScanner = EmailScannerService();
 
   @override
   void initState() {
@@ -26,9 +32,11 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
 
   Future<void> _loadSavedPrefs() async {
     final prefs = await SharedPreferences.getInstance();
+    final approved = await _emailScanner.approvedAccount;
     setState(() {
       _smsEnabled = prefs.getBool('sms_enabled') ?? true;
-      _emailEnabled = prefs.getBool('email_enabled') ?? false;
+      _emailEnabled = prefs.getBool('email_sync_enabled') ?? false;
+      _approvedEmailAccount = approved;
       _loadingPrefs = false;
     });
   }
@@ -72,10 +80,54 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
     }
   }
 
+  Future<void> _onEmailToggleChanged(bool value) async {
+    if (!value) {
+      await _emailScanner.setEnabled(false);
+      setState(() { _emailEnabled = false; _approvedEmailAccount = null; });
+      return;
+    }
+
+    // Must be signed in with Google to use Gmail
+    final account = _auth.currentUser;
+    if (account == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sign in with Google first to enable email sync.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // Request Gmail readonly scope
+    final granted = await _auth.requestGmailScope();
+    if (!mounted) return;
+    if (granted) {
+      await _emailScanner.setEnabled(true, accountEmail: account.email);
+      setState(() {
+        _emailEnabled = true;
+        _approvedEmailAccount = account.email;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gmail sync enabled for ${account.email}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gmail permission was not granted.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   Future<void> _finishSetup() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('sms_enabled', _smsEnabled);
-    await prefs.setBool('email_enabled', _emailEnabled);
     await prefs.setBool('has_completed_setup', true);
     if (!mounted) return;
     context.go('/dashboard');
@@ -131,10 +183,11 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
               _PermissionCard(
                 icon: Icons.mail_outline,
                 title: 'Email Sync',
-                description:
-                    'To securely scan your inbox for digital receipts and refund status updates from your favorite services.',
+                description: _approvedEmailAccount != null
+                    ? 'Syncing Gmail for $_approvedEmailAccount (last 30 days). Tap to disable.'
+                    : 'Scan your Gmail inbox for refund confirmations from the last 30 days. Requires Google sign-in and Gmail read access.',
                 value: _emailEnabled,
-                onChanged: (v) => setState(() => _emailEnabled = v),
+                onChanged: _onEmailToggleChanged,
               ),
               const SizedBox(height: 32),
               Text(

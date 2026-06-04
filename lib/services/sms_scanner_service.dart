@@ -24,7 +24,7 @@ class SmsScannerService {
     return await Permission.sms.isGranted;
   }
 
-  /// Returns refund items parsed from the SMS inbox.
+  /// Returns refund items parsed from the SMS inbox (all messages).
   Future<List<RefundItem>> scanInbox() async {
     if (!Platform.isAndroid) return [];
     final granted = await requestPermission();
