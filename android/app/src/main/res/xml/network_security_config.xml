@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Enforce HTTPS-only traffic for all connections.
+  Cleartext (HTTP) is explicitly blocked except for localhost during development.
+-->
+<network-security-config>
+    <!-- Block all cleartext (HTTP) traffic to any domain -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Trust only system CA certificates — no user-installed CAs -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Allow cleartext on localhost only (for Flutter debug tooling) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

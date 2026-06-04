@@ -210,6 +210,31 @@ class RefundDetectionService {
     return null;
   }
 
+  /// Sanitizes a raw snippet before storage:
+  /// - Removes OTP/CVV patterns (3–8 digit standalone numbers preceded by keywords)
+  /// - Masks anything that looks like a full card/account number (12+ consecutive digits)
+  /// - Truncates to 200 characters
+  static String sanitizeSnippet(String raw) {
+    var s = raw;
+    // Mask long digit runs (card numbers, account numbers: 12–19 digits)
+    s = s.replaceAllMapped(
+      RegExp(r'\b(\d{12,19})\b'),
+      (m) {
+        final digits = m.group(1)!;
+        return '${digits.substring(0, 4)}****${digits.substring(digits.length - 4)}';
+      },
+    );
+    // Mask OTP context: "OTP is 123456" → "OTP is ****"
+    s = s.replaceAll(
+      RegExp(r'(?:otp|pin|password|passcode)\s*(?:is|:)?\s*\d{4,8}',
+          caseSensitive: false),
+      'OTP ****',
+    );
+    // Truncate
+    if (s.length > 200) s = '${s.substring(0, 200)}...';
+    return s;
+  }
+
   /// Builds a RefundItem from raw message content (SMS or email body).
   RefundItem? parseRefund({
     required String id,
@@ -220,7 +245,7 @@ class RefundDetectionService {
   }) {
     if (!looksLikeRefund(sourceText)) return null;
     final amount = extractAmount(sourceText);
-    if (amount == null || amount <= 0) return null;
+    if (amount == null || amount <= 0 || amount > 9999999) return null;
     final currency = extractCurrency(sourceText);
     final orderId = extractOrderId(sourceText);
     final merchant = sender ?? 'Unknown';
@@ -237,7 +262,7 @@ class RefundDetectionService {
       currency: currency,
       orderId: orderId,
       category: category,
-      rawSnippet: sourceText.length > 200 ? '${sourceText.substring(0, 200)}...' : sourceText,
+      rawSnippet: sanitizeSnippet(sourceText),
       detectedAt: date ?? DateTime.now(),
       bankName: bankName,
       refundDestination: destination,

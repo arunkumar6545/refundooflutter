@@ -47,13 +47,14 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted) return;
       final err = e.toString();
       if (err.contains('sign_in_canceled') || err.contains('canceled')) {
-        // User dismissed the picker — no message needed
+        // User dismissed — no message needed
       } else if (err.contains('network_error')) {
         _showError('No internet connection. Please try again.');
       } else if (err.contains(': 10:') || err.contains('DEVELOPER_ERROR')) {
         _showSetupDialog();
       } else {
-        _showError('Sign-in failed ($err)');
+        // Generic message — never expose raw exception details to the user
+        _showError('Sign-in failed. Please try again.');
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -87,15 +88,15 @@ class _LoginScreenState extends State<LoginScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'To enable real Google Sign-In, register this app in Google Cloud Console:',
+              'To enable Google Sign-In, register this app in Google Cloud Console:',
               style: TextStyle(fontSize: 13),
             ),
             SizedBox(height: 12),
             _Step(n: '1', text: 'Go to console.cloud.google.com'),
             _Step(n: '2', text: 'Create project → OAuth consent screen → External'),
             _Step(n: '3', text: 'Credentials → Create → OAuth 2.0 Client → Android'),
-            _Step(n: '4', text: 'Package: com.refundoo.refundoo'),
-            _Step(n: '5', text: 'SHA-1: 73:C5:1A:D5:4B:F5:A9:97\n          :E7:21:E2:C7:20:53:54\n          :D1:ED:12:43:79'),
+            _Step(n: '4', text: 'Package name: com.refundoo.refundoo'),
+            _Step(n: '5', text: 'Run: keytool -list -v -keystore debug.keystore\nto obtain your debug SHA-1 fingerprint'),
           ],
         ),
         actions: [

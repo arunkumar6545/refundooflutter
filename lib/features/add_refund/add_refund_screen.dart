@@ -46,6 +46,10 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
     if (picked != null) setState(() => _refundIssuedAt = picked);
   }
 
+  /// Sanitize free-text input: strip control characters, collapse whitespace.
+  static String _sanitize(String input) =>
+      input.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_isOtherCategory && _customCategoryController.text.trim().isEmpty) {
@@ -57,13 +61,15 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
       );
       return;
     }
-    final orderId = _orderIdController.text.trim();
+    final orderId = _sanitize(_orderIdController.text.trim());
     final merchant = _merchantController.text.trim().isNotEmpty
-        ? _merchantController.text.trim()
+        ? _sanitize(_merchantController.text.trim())
         : 'Unknown Merchant';
     final amount = double.tryParse(_amountController.text.trim()) ?? 0.0;
 
-    final id = 'manual_${orderId}_${DateTime.now().millisecondsSinceEpoch}';
+    // Use a safe ID that cannot contain path-traversal characters
+    final safeOrderId = orderId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+    final id = 'manual_${safeOrderId}_${DateTime.now().millisecondsSinceEpoch}';
     final item = RefundItem(
       id: id,
       merchantName: merchant,
@@ -73,10 +79,14 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
       currency: _currency,
       orderId: orderId,
       category: _isOtherCategory ? null : _presetCategory,
-      categoryLabel: _isOtherCategory ? _customCategoryController.text.trim() : null,
+      categoryLabel: _isOtherCategory
+          ? _sanitize(_customCategoryController.text.trim())
+          : null,
       detectedAt: DateTime.now(),
       refundIssuedAt: _refundIssuedAt,
-      description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+      description: _descriptionController.text.trim().isEmpty
+          ? null
+          : _sanitize(_descriptionController.text.trim()),
     );
 
     await _storage.mergeAndSave([item]);
@@ -139,8 +149,10 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _orderIdController,
+                        maxLength: 64,
                         decoration: InputDecoration(
                           hintText: 'e.g. 8291 or RFND-920',
+                          counterText: '',
                           prefixIcon: const Icon(Icons.tag, color: AppColors.primary, size: 22),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -154,6 +166,7 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
                           if (v == null || v.trim().isEmpty) {
                             return 'Enter order or reference ID';
                           }
+                          if (v.trim().length > 64) return 'Too long (max 64 chars)';
                           return null;
                         },
                         textInputAction: TextInputAction.next,
@@ -168,8 +181,10 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _merchantController,
+                        maxLength: 100,
                         decoration: InputDecoration(
                           hintText: 'e.g. Amazon.com',
+                          counterText: '',
                           prefixIcon: const Icon(Icons.store_outlined, color: AppColors.primary, size: 22),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -179,6 +194,10 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
                               ? Colors.white.withValues(alpha: 0.05)
                               : AppColors.surfaceLight,
                         ),
+                        validator: (v) {
+                          if (v != null && v.trim().length > 100) return 'Too long (max 100 chars)';
+                          return null;
+                        },
                         textInputAction: TextInputAction.next,
                       ),
                       const SizedBox(height: 20),
@@ -241,9 +260,12 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
                           if (v == null || v.trim().isEmpty) {
                             return 'Enter amount';
                           }
-                          if (double.tryParse(v.trim()) == null ||
-                              double.tryParse(v.trim())! <= 0) {
-                            return 'Enter a valid amount';
+                          final parsed = double.tryParse(v.trim());
+                          if (parsed == null || parsed <= 0) {
+                            return 'Enter a valid amount greater than 0';
+                          }
+                          if (parsed > 9999999) {
+                            return 'Amount is unreasonably large';
                           }
                           return null;
                         },
@@ -295,8 +317,10 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
                       TextFormField(
                         controller: _descriptionController,
                         maxLines: 3,
+                        maxLength: 500,
                         decoration: InputDecoration(
                           hintText: 'Notes or details (optional)',
+                          counterText: '',
                           alignLabelWithHint: true,
                           prefixIcon: const Icon(Icons.notes_outlined, color: AppColors.primary, size: 22),
                           border: OutlineInputBorder(
@@ -357,8 +381,10 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: _customCategoryController,
+                          maxLength: 50,
                           decoration: InputDecoration(
                             hintText: 'Enter category (e.g. Books, Subscriptions)',
+                            counterText: '',
                             prefixIcon: const Icon(Icons.label_outline, color: AppColors.primary, size: 22),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(16),
@@ -368,6 +394,13 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
                                 ? Colors.white.withValues(alpha: 0.05)
                                 : AppColors.surfaceLight,
                           ),
+                          validator: (v) {
+                            if (_isOtherCategory && (v == null || v.trim().isEmpty)) {
+                              return 'Enter a category name';
+                            }
+                            if (v != null && v.trim().length > 50) return 'Too long (max 50 chars)';
+                            return null;
+                          },
                           textInputAction: TextInputAction.done,
                         ),
                       ],

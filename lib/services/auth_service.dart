@@ -1,16 +1,26 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Manages Google Sign-In and persists the session locally.
+/// Manages Google Sign-In and persists session credentials in encrypted storage.
 class AuthService {
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
   AuthService._internal();
 
+  // Non-sensitive flags stay in SharedPreferences
   static const _keySignedIn = 'auth_signed_in';
-  static const _keyName = 'auth_name';
-  static const _keyEmail = 'auth_email';
-  static const _keyPhoto = 'auth_photo';
+
+  // Sensitive identity data goes in encrypted storage
+  static const _secKeyName  = 'auth_sec_name';
+  static const _secKeyEmail = 'auth_sec_email';
+  static const _secKeyPhoto = 'auth_sec_photo';
+  static const _secKeyGuest = 'auth_sec_is_guest';
+
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  );
 
   static const _gmailScope =
       'https://www.googleapis.com/auth/gmail.readonly';
@@ -47,7 +57,7 @@ class AuthService {
     }
   }
 
-  /// Restore persisted session from SharedPreferences on app start.
+  /// Restore persisted session from encrypted storage on app start.
   Future<bool> restoreSession() async {
     final prefs = await SharedPreferences.getInstance();
     final wasSignedIn = prefs.getBool(_keySignedIn) ?? false;
@@ -59,12 +69,11 @@ class AuthService {
       if (_currentUser != null) return true;
     } catch (_) {}
 
-    // Guest session or cached Google identity
-    final name = prefs.getString(_keyName);
-    final email = prefs.getString(_keyEmail);
+    // Restore from secure storage
+    final name = await _secureStorage.read(key: _secKeyName);
     if (name != null) {
-      // Restore guest flag if applicable
-      if (prefs.getBool('_is_guest') == true) _isGuest = true;
+      final isGuest = await _secureStorage.read(key: _secKeyGuest);
+      if (isGuest == 'true') _isGuest = true;
       return true;
     }
     return false;
@@ -88,60 +97,55 @@ class AuthService {
     _isGuest = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keySignedIn, true);
-    await prefs.setString(_keyName, 'Guest');
-    await prefs.setString(_keyEmail, '');
-    await prefs.setBool('_is_guest', true);
+    await _secureStorage.write(key: _secKeyName, value: 'Guest');
+    await _secureStorage.write(key: _secKeyEmail, value: '');
+    await _secureStorage.write(key: _secKeyGuest, value: 'true');
   }
 
   bool _guestChecked = false;
   Future<bool> get isGuest async {
     if (!_guestChecked) {
-      final prefs = await SharedPreferences.getInstance();
       _guestChecked = true;
-      return prefs.getBool('_is_guest') ?? false;
+      final val = await _secureStorage.read(key: _secKeyGuest);
+      _isGuest = val == 'true';
     }
-    return false;
+    return _isGuest;
   }
 
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     _currentUser = null;
     _isGuest = false;
+    _guestChecked = false;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keySignedIn);
-    await prefs.remove(_keyName);
-    await prefs.remove(_keyEmail);
-    await prefs.remove(_keyPhoto);
-    await prefs.remove('_is_guest');
+    await _secureStorage.deleteAll();
   }
 
   Future<void> _persistUser(GoogleSignInAccount account) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keySignedIn, true);
-    await prefs.setString(_keyName, account.displayName ?? '');
-    await prefs.setString(_keyEmail, account.email);
+    await _secureStorage.write(key: _secKeyName, value: account.displayName ?? '');
+    await _secureStorage.write(key: _secKeyEmail, value: account.email);
     if (account.photoUrl != null) {
-      await prefs.setString(_keyPhoto, account.photoUrl!);
+      await _secureStorage.write(key: _secKeyPhoto, value: account.photoUrl!);
     }
   }
 
-  // ── Cached getters (works even when GoogleSignInAccount is null) ─────────
+  // ── Cached getters ──────────────────────────────────────────────────────────
 
   Future<String> get cachedName async {
     if (_currentUser?.displayName != null) return _currentUser!.displayName!;
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyName) ?? 'User';
+    return await _secureStorage.read(key: _secKeyName) ?? 'User';
   }
 
   Future<String> get cachedEmail async {
     if (_currentUser?.email != null) return _currentUser!.email;
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyEmail) ?? '';
+    return await _secureStorage.read(key: _secKeyEmail) ?? '';
   }
 
   Future<String?> get cachedPhotoUrl async {
     if (_currentUser?.photoUrl != null) return _currentUser!.photoUrl;
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyPhoto);
+    return await _secureStorage.read(key: _secKeyPhoto);
   }
 }

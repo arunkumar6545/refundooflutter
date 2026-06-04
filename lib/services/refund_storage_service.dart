@@ -1,17 +1,22 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/refund_item.dart';
 
-/// Persists all refund tracking data in local storage only.
-/// Nothing is sent to any server.
+/// Persists all refund tracking data using encrypted storage (Android Keystore).
+/// Nothing is sent to any server. All data stays on this device.
 class RefundStorageService {
-  static const String _keyRefunds = 'refundoo_refund_items';
+  static const String _keyRefunds = 'refundoo_refund_items_v2';
+
+  // Use EncryptedSharedPreferences on Android (backed by Android Keystore).
+  static const _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+  );
 
   Future<List<RefundItem>> loadRefunds() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonStr = prefs.getString(_keyRefunds);
+    final jsonStr = await _storage.read(key: _keyRefunds);
     if (jsonStr == null || jsonStr.isEmpty) return [];
     try {
       final list = jsonDecode(jsonStr) as List<dynamic>;
@@ -24,13 +29,12 @@ class RefundStorageService {
   }
 
   Future<void> saveRefunds(List<RefundItem> items) async {
-    final prefs = await SharedPreferences.getInstance();
     final list = items.map((e) => e.toJson()).toList();
-    await prefs.setString(_keyRefunds, jsonEncode(list));
+    await _storage.write(key: _keyRefunds, value: jsonEncode(list));
   }
 
   /// Merges new items with existing (by id), then saves. Returns updated list.
-  /// If an existing item was manually completed, its status is preserved.
+  /// If an existing item was manually completed, its status + reason are preserved.
   Future<List<RefundItem>> mergeAndSave(List<RefundItem> newItems) async {
     final existing = await loadRefunds();
     final byId = {for (final r in existing) r.id: r};
