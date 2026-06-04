@@ -46,12 +46,22 @@ workflows:
           /usr/libexec/PlistBuddy -c "Set :CFBundleName Refundoo"         "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 'Used to protect your refund data'" "$PLIST" 2>/dev/null || true
 
-      - name: Build unsigned IPA
+      - name: Build unsigned archive
         # flutter build ipa runs pod install automatically
         script: flutter build ipa --no-codesign --release
 
+      - name: Package archive into IPA for sideloading
+        script: |
+          ARCHIVE="build/ios/archive/Runner.xcarchive"
+          IPA_DIR="build/ios/ipa"
+          mkdir -p "$IPA_DIR/Payload"
+          cp -r "$ARCHIVE/Products/Applications/Runner.app" "$IPA_DIR/Payload/"
+          cd "$IPA_DIR"
+          zip -r Refundoo.ipa Payload
+          rm -rf Payload
+
     artifacts:
-      - build/ios/ipa/*.ipa
+      - build/ios/ipa/Refundoo.ipa
       - /tmp/xcodebuild_logs/*.log
 
   # ─────────────────────────────────────────────────────────────────────────────
