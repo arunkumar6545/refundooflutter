@@ -108,11 +108,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return freq.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
   }
 
+  /// Average number of days pending refunds have been waiting since detection.
+  /// Returns 0 when there are no pending items.
   int get _waitDays {
-    if (_refunds.isEmpty) return 3;
-    final processing = _refunds.where((r) => r.status != RefundStatus.completed);
-    if (processing.isEmpty) return 0;
-    return 3;
+    final pending = _refunds
+        .where((r) => r.status != RefundStatus.completed)
+        .toList();
+    if (pending.isEmpty) return 0;
+    final now = DateTime.now();
+    final totalDays = pending.fold<int>(0, (sum, r) {
+      final since = r.detectedAt ?? r.refundIssuedAt;
+      if (since == null) return sum;
+      return sum + now.difference(since).inDays;
+    });
+    final withDate = pending.where(
+        (r) => r.detectedAt != null || r.refundIssuedAt != null).length;
+    if (withDate == 0) return 0;
+    return (totalDays / withDate).round();
+  }
+
+  /// Label describing what _waitDays means.
+  String get _waitLabel {
+    final days = _waitDays;
+    if (days == 0) return 'All clear';
+    if (days == 1) return '1 day avg wait';
+    return '$days days avg wait';
   }
 
   bool get _hasActiveFilter =>
@@ -450,8 +470,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Expanded(
             child: _BentoCard(
               icon: Icons.schedule_outlined,
-              label: 'Wait Time',
-              value: '$_waitDays Days',
+              label: 'Avg Wait Time',
+              value: _waitLabel,
               onTap: () => setState(() {
                 _filterKind = _DashboardFilterKind.waitTime;
                 _filterCategory = null;
