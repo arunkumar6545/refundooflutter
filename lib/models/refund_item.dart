@@ -12,6 +12,39 @@ enum RefundSource {
   email,
 }
 
+enum RefundDestination {
+  bankAccount,
+  creditCard,
+  debitCard,
+  wallet,
+  upi,
+  unknown,
+}
+
+extension RefundDestinationX on RefundDestination {
+  String get label {
+    switch (this) {
+      case RefundDestination.bankAccount: return 'Bank Account';
+      case RefundDestination.creditCard:  return 'Credit Card';
+      case RefundDestination.debitCard:   return 'Debit Card';
+      case RefundDestination.wallet:      return 'Wallet';
+      case RefundDestination.upi:         return 'UPI';
+      case RefundDestination.unknown:     return 'Account';
+    }
+  }
+
+  String get icon {
+    switch (this) {
+      case RefundDestination.bankAccount: return '🏦';
+      case RefundDestination.creditCard:  return '💳';
+      case RefundDestination.debitCard:   return '💳';
+      case RefundDestination.wallet:      return '👝';
+      case RefundDestination.upi:         return '📲';
+      case RefundDestination.unknown:     return '🏦';
+    }
+  }
+}
+
 class RefundItem {
   const RefundItem({
     required this.id,
@@ -29,6 +62,9 @@ class RefundItem {
     this.refundIssuedAt,
     this.description,
     this.manuallyCompleted = false,
+    this.bankName,
+    this.refundDestination = RefundDestination.unknown,
+    this.refundIssuer,
   });
 
   final String id;
@@ -51,6 +87,12 @@ class RefundItem {
   /// True when the user has manually marked this refund as completed.
   /// Sync will never downgrade the status back to processing.
   final bool manuallyCompleted;
+  /// Bank name where the refund will be credited (e.g. "HDFC", "SBI").
+  final String? bankName;
+  /// Where the refund is going (bank account, credit card, UPI, etc.).
+  final RefundDestination refundDestination;
+  /// Company that issued the refund (e.g. "Amazon", "Zomato").
+  final String? refundIssuer;
 
   /// Formatted amount string, e.g. "₹499.00" or "$34.99"
   String get formattedAmount => '$currency${amount.toStringAsFixed(2)}';
@@ -71,6 +113,9 @@ class RefundItem {
     DateTime? refundIssuedAt,
     String? description,
     bool? manuallyCompleted,
+    String? bankName,
+    RefundDestination? refundDestination,
+    String? refundIssuer,
   }) {
     return RefundItem(
       id: id ?? this.id,
@@ -88,6 +133,9 @@ class RefundItem {
       refundIssuedAt: refundIssuedAt ?? this.refundIssuedAt,
       description: description ?? this.description,
       manuallyCompleted: manuallyCompleted ?? this.manuallyCompleted,
+      bankName: bankName ?? this.bankName,
+      refundDestination: refundDestination ?? this.refundDestination,
+      refundIssuer: refundIssuer ?? this.refundIssuer,
     );
   }
 
@@ -163,6 +211,9 @@ class RefundItem {
       'refundIssuedAt': refundIssuedAt?.toIso8601String(),
       'description': description,
       'manuallyCompleted': manuallyCompleted,
+      'bankName': bankName,
+      'refundDestination': refundDestination.name,
+      'refundIssuer': refundIssuer,
     };
   }
 
@@ -189,6 +240,11 @@ class RefundItem {
           : null,
       description: json['description'] as String?,
       manuallyCompleted: json['manuallyCompleted'] as bool? ?? false,
+      bankName: json['bankName'] as String?,
+      refundDestination: json['refundDestination'] != null
+          ? RefundDestination.values.byName(json['refundDestination'] as String)
+          : RefundDestination.unknown,
+      refundIssuer: json['refundIssuer'] as String?,
     );
   }
 }

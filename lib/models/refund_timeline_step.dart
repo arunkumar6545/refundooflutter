@@ -8,6 +8,8 @@ class RefundTimelineStep {
     required this.source,
     this.snippet,
     this.isCurrent = false,
+    this.isSkipped = false,
+    this.isManualClose = false,
   });
 
   final String title;
@@ -16,4 +18,8 @@ class RefundTimelineStep {
   final RefundSource source;
   final String? snippet;
   final bool isCurrent;
+  /// True when this step was bypassed by a manual completion.
+  final bool isSkipped;
+  /// True for the "Manually Closed" terminal step.
+  final bool isManualClose;
 }

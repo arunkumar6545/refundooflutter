@@ -207,8 +207,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _loadRefunds();
   }
 
-  Future<void> _loadRefunds() async {
-    setState(() => _loading = true);
+  Future<void> _loadRefunds({bool showLoader = true}) async {
+    if (showLoader) setState(() => _loading = true);
     // One-time migration: clear old seeded demo data (ids '1' and '2')
     final prefs = await SharedPreferences.getInstance();
     if (!(prefs.getBool('_seeded_data_cleared') ?? false)) {
@@ -218,6 +218,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       await prefs.setBool('_seeded_data_cleared', true);
     }
     final list = await _storage.loadRefunds();
+    if (!mounted) return;
     setState(() {
       _refunds = list;
       _loading = false;
@@ -331,7 +332,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     final item = _filteredRefunds[i];
                     return _ActivityTile(
                       item: item,
-                      onTap: () => context.push('/refund/${item.id}'),
+                      onTap: () async {
+                        await context.push('/refund/${item.id}');
+                        if (mounted) _loadRefunds(showLoader: false);
+                      },
                     );
                   },
                   childCount: _filteredRefunds.length,

@@ -43,6 +43,78 @@ class RefundDetectionService {
     caseSensitive: false,
   );
 
+  // ── Bank name extraction ───────────────────────────────────────────────────
+  static final _bankPatterns = <String, RegExp>{
+    'HDFC Bank':    RegExp(r'\bhdfc\b',       caseSensitive: false),
+    'SBI':          RegExp(r'\bsbi\b|\bstate bank\b', caseSensitive: false),
+    'ICICI Bank':   RegExp(r'\bicici\b',       caseSensitive: false),
+    'Axis Bank':    RegExp(r'\baxis\b',        caseSensitive: false),
+    'Kotak Bank':   RegExp(r'\bkotak\b',       caseSensitive: false),
+    'Yes Bank':     RegExp(r'\byes bank\b',    caseSensitive: false),
+    'PNB':          RegExp(r'\bpnb\b|\bpunjab national\b', caseSensitive: false),
+    'Canara Bank':  RegExp(r'\bcanara\b',      caseSensitive: false),
+    'Union Bank':   RegExp(r'\bunion bank\b',  caseSensitive: false),
+    'IDFC Bank':    RegExp(r'\bidfc\b',        caseSensitive: false),
+    'Federal Bank': RegExp(r'\bfederal bank\b', caseSensitive: false),
+    'RBL Bank':     RegExp(r'\brbl\b',         caseSensitive: false),
+    'IndusInd Bank':RegExp(r'\bindusind\b',    caseSensitive: false),
+    'Bank of Baroda':RegExp(r'\bbaroda\b|\bbob\b', caseSensitive: false),
+    'Paytm Payments Bank': RegExp(r'\bpaytm payments bank\b', caseSensitive: false),
+    'HSBC':         RegExp(r'\bhsbc\b',        caseSensitive: false),
+    'Citi Bank':    RegExp(r'\bciti\b',        caseSensitive: false),
+    'Chase':        RegExp(r'\bchase\b',       caseSensitive: false),
+    'Bank of America': RegExp(r'\bbank of america\b|\bboa\b', caseSensitive: false),
+    'Wells Fargo':  RegExp(r'\bwells fargo\b', caseSensitive: false),
+    'Barclays':     RegExp(r'\bbarclays\b',    caseSensitive: false),
+  };
+
+  // ── Destination type extraction ────────────────────────────────────────────
+  static final _destPatterns = <RefundDestination, RegExp>{
+    RefundDestination.upi:         RegExp(r'\bupi\b|\bvpa\b|\bupi id\b', caseSensitive: false),
+    RefundDestination.wallet:      RegExp(r'\bwallet\b|\bpaytm\b|\bphonepe\b|\bgpay\b|\bgoogle pay\b|\bamazon pay\b|\bmobikwik\b', caseSensitive: false),
+    RefundDestination.creditCard:  RegExp(r'\bcredit card\b|\bcc\b', caseSensitive: false),
+    RefundDestination.debitCard:   RegExp(r'\bdebit card\b|\bdc\b', caseSensitive: false),
+    RefundDestination.bankAccount: RegExp(r'\bbank account\b|\bsavings account\b|\bcurrent account\b|\bneft\b|\bimps\b|\brtgs\b|\baccount ending\b|\baccount no\b', caseSensitive: false),
+  };
+
+  // ── Issuer / company extraction ────────────────────────────────────────────
+  static const _issuers = [
+    'Amazon', 'Flipkart', 'Myntra', 'Meesho', 'Nykaa', 'Ajio',
+    'Zomato', 'Swiggy', 'Blinkit', 'BigBasket',
+    'Ola', 'Uber', 'Rapido',
+    'MakeMyTrip', 'GoIbibo', 'IRCTC', 'IndiGo', 'Air India',
+    'BookMyShow', 'Netflix', 'Hotstar', 'Zee5', 'SonyLIV',
+    'Jio', 'Airtel', 'Vi', 'BSNL',
+    'Croma', 'Reliance Digital',
+    'Paytm', 'PhonePe', 'Google Pay',
+    'Apple', 'Google', 'Microsoft',
+  ];
+
+  String? extractBankName(String text) {
+    for (final entry in _bankPatterns.entries) {
+      if (entry.value.hasMatch(text)) return entry.key;
+    }
+    return null;
+  }
+
+  RefundDestination extractDestination(String text) {
+    for (final entry in _destPatterns.entries) {
+      if (entry.value.hasMatch(text)) return entry.key;
+    }
+    return RefundDestination.unknown;
+  }
+
+  String? extractIssuer(String sender, String body) {
+    final combined = '$sender $body';
+    for (final issuer in _issuers) {
+      if (combined.toLowerCase().contains(issuer.toLowerCase())) return issuer;
+    }
+    // Fall back to sender cleaned up (remove country codes, digits, dashes)
+    final cleaned = sender.replaceAll(RegExp(r'[^a-zA-Z\s]'), '').trim();
+    if (cleaned.length >= 3) return cleaned;
+    return null;
+  }
+
   /// Returns true if the text likely describes a refund.
   bool looksLikeRefund(String text) {
     final lower = text.toLowerCase();
@@ -153,6 +225,9 @@ class RefundDetectionService {
     final orderId = extractOrderId(sourceText);
     final merchant = sender ?? 'Unknown';
     final category = inferCategory(merchant, sourceText);
+    final bankName = extractBankName(sourceText);
+    final destination = extractDestination(sourceText);
+    final issuer = extractIssuer(merchant, sourceText);
     return RefundItem(
       id: id,
       merchantName: merchant,
@@ -164,6 +239,9 @@ class RefundDetectionService {
       category: category,
       rawSnippet: sourceText.length > 200 ? '${sourceText.substring(0, 200)}...' : sourceText,
       detectedAt: date ?? DateTime.now(),
+      bankName: bankName,
+      refundDestination: destination,
+      refundIssuer: issuer,
     );
   }
 }

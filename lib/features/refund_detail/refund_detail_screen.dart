@@ -23,38 +23,68 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
 
   static List<RefundTimelineStep> _timelineFor(RefundItem? refund) {
     if (refund == null) return [];
+    final isManual = refund.manuallyCompleted;
+    final closedAt = refund.refundIssuedAt ?? refund.detectedAt ?? DateTime.now();
+    final issuer = refund.refundIssuer ?? refund.merchantName;
+
     return [
+      // Step 1 — always complete (we scanned it)
       RefundTimelineStep(
         title: 'Message Parsed',
         timestamp: refund.detectedAt != null
             ? _formatDate(refund.detectedAt!)
-            : 'Oct 12, 10:24 AM',
+            : 'Unknown',
         isCompleted: true,
         source: refund.source,
-        snippet: refund.rawSnippet ??
-            'Your refund of \$${refund.amount.toStringAsFixed(2)} has been detected.',
+        snippet: refund.rawSnippet?.isNotEmpty == true
+            ? refund.rawSnippet!
+            : 'Refund of ${refund.formattedAmount} detected from $issuer.',
       ),
-      const RefundTimelineStep(
+
+      // Step 2 — merchant confirmed (complete when we have the data)
+      RefundTimelineStep(
         title: 'Merchant Confirmed',
-        timestamp: 'Oct 12, 02:15 PM',
+        timestamp: refund.detectedAt != null
+            ? _formatDate(refund.detectedAt!)
+            : 'Unknown',
         isCompleted: true,
-        source: RefundSource.sms,
-        snippet:
-            'Ref: RFND-920. We have processed your refund. Funds should reach your bank shortly.',
+        source: refund.source,
+        snippet: '${refund.formattedAmount} refund from $issuer'
+            '${refund.orderId != null ? ' (Order #${refund.orderId})' : ''}'
+            ' has been confirmed.',
       ),
-      const RefundTimelineStep(
+
+      // Step 3 — bank processing: current if still processing, skipped if manual
+      RefundTimelineStep(
         title: 'Bank Processing',
-        timestamp: 'Oct 13, 09:00 AM',
+        timestamp: isManual ? '— Skipped' : 'Awaiting',
         isCompleted: false,
-        source: RefundSource.sms,
-        isCurrent: true,
+        isCurrent: !isManual,
+        isSkipped: isManual,
+        source: refund.source,
       ),
-      const RefundTimelineStep(
+
+      // Step 4 — funds released: awaiting normally, skipped if manual
+      RefundTimelineStep(
         title: 'Funds Released',
-        timestamp: 'Awaiting',
+        timestamp: isManual ? '— Skipped' : 'Awaiting',
         isCompleted: false,
-        source: RefundSource.sms,
+        isSkipped: isManual,
+        source: refund.source,
       ),
+
+      // Step 5 — only for manually closed refunds
+      if (isManual)
+        RefundTimelineStep(
+          title: 'Manually Closed',
+          timestamp: _formatDate(closedAt),
+          isCompleted: true,
+          isManualClose: true,
+          source: refund.source,
+          snippet: refund.description?.isNotEmpty == true
+              ? refund.description!
+              : 'Marked as completed by you.',
+        ),
     ];
   }
 
@@ -214,7 +244,7 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
     final updated = refund.copyWith(
       status: RefundStatus.completed,
       manuallyCompleted: true,
-      description: reason.isNotEmpty ? reason : refund.description,
+      description: reason.isNotEmpty ? reason : 'Manually marked as completed',
       refundIssuedAt: refund.refundIssuedAt ?? DateTime.now(),
     );
     await _storage.mergeAndSave([updated]);
@@ -335,55 +365,12 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 16),
-            Text(
-              'Refund for Order #${refund.orderId ?? refund.id}',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  'Amount: ',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppColors.textMuted,
-                      ),
-                ),
-                Text(
-                  refund.formattedAmount,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: () => _showCurrencyPicker(context),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.edit_outlined, size: 14, color: AppColors.primary),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Edit currency',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
+            // ── Refund source info card ──────────────────────────────────
+            _RefundInfoCard(refund: refund, onEditCurrency: () => _showCurrencyPicker(context)),
+            const SizedBox(height: 20),
             _Timeline(steps: steps),
             const SizedBox(height: 32),
-            _MerchantContactCard(),
+            _MerchantContactCard(refund: refund),
             const SizedBox(height: 120),
           ],
         ),
@@ -507,103 +494,157 @@ class _TimelineStepRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPending = !step.isCompleted && !step.isCurrent;
-    final circleColor = step.isCompleted
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isPending = !step.isCompleted && !step.isCurrent && !step.isSkipped;
+
+    // Circle color
+    final circleColor = step.isManualClose
         ? AppColors.success
-        : step.isCurrent
-            ? AppColors.pending
-            : (Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xFF4B5563)
-                : const Color(0xFFD1D5DB));
-    final icon = step.isCompleted
-        ? Icons.psychology
-        : step.isCurrent
-            ? Icons.account_balance_outlined
-            : Icons.payments_outlined;
-    if (step.isCompleted) {
-      if (step.title == 'Merchant Confirmed') {
-        // use verified icon for second step
-      }
-    }
+        : step.isSkipped
+            ? (isDark ? const Color(0xFF374151) : const Color(0xFFD1D5DB))
+            : step.isCompleted
+                ? AppColors.success
+                : step.isCurrent
+                    ? AppColors.pending
+                    : (isDark ? const Color(0xFF4B5563) : const Color(0xFFD1D5DB));
+
+    // Circle icon
+    final IconData circleIcon = step.isManualClose
+        ? Icons.pan_tool_outlined
+        : step.isSkipped
+            ? Icons.close
+            : step.isCompleted
+                ? (step.title == 'Merchant Confirmed'
+                    ? Icons.verified_outlined
+                    : step.title == 'Message Parsed'
+                        ? Icons.psychology_outlined
+                        : Icons.check)
+                : step.isCurrent
+                    ? Icons.account_balance_outlined
+                    : Icons.payments_outlined;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 32),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: circleColor,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: circleColor.withValues(alpha: 0.4),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-              border: step.isCurrent
-                  ? Border.all(color: AppColors.pending.withValues(alpha: 0.3), width: 4)
-                  : null,
+      child: Opacity(
+        opacity: isPending ? 0.45 : (step.isSkipped ? 0.55 : 1.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Circle ──────────────────────────────────────────────────
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: circleColor,
+                shape: BoxShape.circle,
+                boxShadow: step.isSkipped
+                    ? []
+                    : [
+                        BoxShadow(
+                          color: circleColor.withValues(alpha: 0.4),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                border: step.isCurrent
+                    ? Border.all(
+                        color: AppColors.pending.withValues(alpha: 0.3),
+                        width: 4)
+                    : step.isManualClose
+                        ? Border.all(
+                            color: AppColors.success.withValues(alpha: 0.3),
+                            width: 3)
+                        : null,
+              ),
+              child: Icon(circleIcon, color: Colors.white, size: 20),
             ),
-            child: Icon(
-              step.title == 'Merchant Confirmed'
-                  ? Icons.verified_outlined
-                  : step.title == 'Message Parsed'
-                      ? Icons.psychology_outlined
-                      : icon,
-              color: Colors.white,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Opacity(
-              opacity: isPending ? 0.5 : 1,
+            const SizedBox(width: 16),
+
+            // ── Content card ─────────────────────────────────────────────
+            Expanded(
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white.withValues(alpha: 0.05)
-                      : AppColors.surfaceLight,
+                  color: step.isManualClose
+                      ? AppColors.success.withValues(alpha: isDark ? 0.12 : 0.07)
+                      : step.isSkipped
+                          ? (isDark
+                              ? Colors.white.withValues(alpha: 0.03)
+                              : const Color(0xFFF3F4F6))
+                          : (isDark
+                              ? Colors.white.withValues(alpha: 0.05)
+                              : AppColors.surfaceLight),
                   borderRadius: BorderRadius.circular(16),
-                  border: step.isCurrent
-                      ? Border.all(color: AppColors.pending.withValues(alpha: 0.2))
-                      : null,
+                  border: step.isManualClose
+                      ? Border.all(
+                          color: AppColors.success.withValues(alpha: 0.35))
+                      : step.isCurrent
+                          ? Border.all(
+                              color: AppColors.pending.withValues(alpha: 0.2))
+                          : null,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          step.title,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                color: step.isCurrent ? AppColors.pending : null,
-                              ),
+                        // Title — strikethrough when skipped
+                        Flexible(
+                          child: Text(
+                            step.title,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(
+                                  color: step.isManualClose
+                                      ? AppColors.success
+                                      : step.isSkipped
+                                          ? AppColors.textMuted
+                                          : step.isCurrent
+                                              ? AppColors.pending
+                                              : null,
+                                  decoration: step.isSkipped
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                  decorationColor: AppColors.textMuted,
+                                ),
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
                           step.timestamp,
-                          style: Theme.of(context).textTheme.labelSmall,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                decoration: step.isSkipped
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                                decorationColor: AppColors.textMuted,
+                              ),
                         ),
                       ],
                     ),
+
+                    // Snippet
                     if (step.snippet != null) ...[
                       const SizedBox(height: 8),
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).brightness == Brightness.dark
-                              ? Colors.black.withValues(alpha: 0.2)
-                              : Colors.white.withValues(alpha: 0.5),
+                          color: step.isManualClose
+                              ? AppColors.success.withValues(alpha: 0.06)
+                              : (isDark
+                                  ? Colors.black.withValues(alpha: 0.2)
+                                  : Colors.white.withValues(alpha: 0.5)),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: Theme.of(context).brightness == Brightness.dark
-                                ? const Color(0xFF4B5563)
-                                : const Color(0xFFD1D5DB),
-                            style: BorderStyle.solid,
+                            color: step.isManualClose
+                                ? AppColors.success.withValues(alpha: 0.2)
+                                : (isDark
+                                    ? const Color(0xFF4B5563)
+                                    : const Color(0xFFD1D5DB)),
                           ),
                         ),
                         child: Column(
@@ -611,50 +652,278 @@ class _TimelineStepRow extends StatelessWidget {
                           children: [
                             Text(
                               step.snippet!,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(
-                                  step.source == RefundSource.email
-                                      ? Icons.mail_outline
-                                      : Icons.sms_outlined,
-                                  size: 12,
-                                  color: AppColors.primary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Source: ${step.source.name.toUpperCase()}',
-                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w700,
+                              style:
+                                  Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        fontStyle: step.isManualClose
+                                            ? FontStyle.normal
+                                            : FontStyle.italic,
+                                        color: step.isManualClose
+                                            ? AppColors.success
+                                            : null,
                                       ),
-                                ),
-                              ],
                             ),
+                            if (!step.isManualClose) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    step.source == RefundSource.email
+                                        ? Icons.mail_outline
+                                        : Icons.sms_outlined,
+                                    size: 12,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Source: ${step.source.name.toUpperCase()}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
                     ],
-                    if (step.snippet == null && !step.isCompleted && step.title == 'Bank Processing') ...[
+
+                    if (step.snippet == null &&
+                        !step.isCompleted &&
+                        !step.isSkipped &&
+                        step.title == 'Bank Processing') ...[
                       const SizedBox(height: 8),
                       Text(
-                        'Verifying transaction with your financial institution. This usually takes 2-3 business days.',
+                        'Verifying transaction with your financial institution. Usually takes 2–3 business days.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
-                    if (step.snippet == null && !step.isCompleted && step.title == 'Funds Released')
+                    if (step.snippet == null &&
+                        !step.isCompleted &&
+                        !step.isSkipped &&
+                        step.title == 'Funds Released')
                       Text(
-                        'Available in your balance.',
+                        'Available in your balance once released.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                   ],
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Top card on the detail screen showing issuer, bank and destination.
+class _RefundInfoCard extends StatelessWidget {
+  const _RefundInfoCard({required this.refund, required this.onEditCurrency});
+  final RefundItem refund;
+  final VoidCallback onEditCurrency;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark
+        ? Colors.white.withValues(alpha: 0.05)
+        : AppColors.surfaceLight;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Column(
+        children: [
+          // ── Top: issuer + amount ───────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Row(
+              children: [
+                // Company icon
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.storefront_outlined,
+                      color: AppColors.primary, size: 26),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        refund.refundIssuer ?? refund.merchantName,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Refunded by',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AppColors.textMuted,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Amount + edit currency
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      refund.formattedAmount,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
+                          ),
+                    ),
+                    InkWell(
+                      onTap: onEditCurrency,
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.edit_outlined,
+                                size: 11, color: AppColors.primary),
+                            const SizedBox(width: 3),
+                            Text(
+                              'Edit currency',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          Divider(
+            height: 1,
+            color: AppColors.primary.withValues(alpha: 0.12),
+          ),
+
+          // ── Bottom: bank + destination ─────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _InfoChip(
+                    emoji: '🏦',
+                    label: 'Bank',
+                    value: refund.bankName ?? 'Unknown',
+                    color: const Color(0xFF1565C0),
+                    bgColor: const Color(0xFFE3F2FD),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _InfoChip(
+                    emoji: refund.refundDestination.icon,
+                    label: 'Credited to',
+                    value: refund.refundDestination.label,
+                    color: const Color(0xFF2E7D32),
+                    bgColor: const Color(0xFFE8F5E9),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _InfoChip(
+                    emoji: '📋',
+                    label: 'Order',
+                    value: refund.orderId != null
+                        ? '#${refund.orderId}'
+                        : '#${refund.id.substring(0, 6)}',
+                    color: const Color(0xFF6A1B9A),
+                    bgColor: const Color(0xFFF3E5F5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({
+    required this.emoji,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.bgColor,
+  });
+
+  final String emoji;
+  final String label;
+  final String value;
+  final Color color;
+  final Color bgColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? color.withValues(alpha: 0.15) : bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 18)),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: color.withValues(alpha: 0.8),
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : color,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -807,12 +1076,20 @@ class _MarkCompleteSheetState extends State<_MarkCompleteSheet> {
 }
 
 class _MerchantContactCard extends StatelessWidget {
+  const _MerchantContactCard({required this.refund});
+  final RefundItem refund;
+
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final issuer = refund.refundIssuer ?? refund.merchantName;
+    final bank = refund.bankName;
+    final dest = refund.refundDestination;
+
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
+        color: isDark
             ? Colors.white.withValues(alpha: 0.05)
             : AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(24),
@@ -822,10 +1099,10 @@ class _MerchantContactCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.verified_user_outlined, color: AppColors.success, size: 22),
+              const Icon(Icons.info_outline, color: AppColors.primary, size: 20),
               const SizedBox(width: 8),
               Text(
-                'Official Merchant Contact',
+                'Refund Details',
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       color: AppColors.textMuted,
                       letterSpacing: 1,
@@ -834,24 +1111,44 @@ class _MerchantContactCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          _ContactRow(
-            icon: Icons.call_outlined,
-            label: 'Support Line',
-            value: '+1 (800) 555-0199',
-            onCopy: () {},
+          _DetailRow(
+            icon: Icons.storefront_outlined,
+            label: 'Issued by',
+            value: issuer,
           ),
-          const SizedBox(height: 12),
-          _ContactRow(
-            icon: Icons.alternate_email,
-            label: 'Official Email',
-            value: 'support@merchant.com',
-            onCopy: () {},
+          const SizedBox(height: 10),
+          _DetailRow(
+            icon: Icons.account_balance_outlined,
+            label: 'Credited to bank',
+            value: bank ?? 'Not detected',
+            dimmed: bank == null,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
+          _DetailRow(
+            icon: Icons.credit_card_outlined,
+            label: 'Payment method',
+            value: dest == RefundDestination.unknown
+                ? 'Not detected'
+                : dest.label,
+            dimmed: dest == RefundDestination.unknown,
+          ),
+          if (refund.description?.isNotEmpty == true) ...[
+            const SizedBox(height: 10),
+            _DetailRow(
+              icon: Icons.note_outlined,
+              label: 'Note',
+              value: refund.description!,
+            ),
+          ],
+          const SizedBox(height: 14),
           Center(
             child: Text(
-              'Response time typically under 24 hours',
-              style: Theme.of(context).textTheme.labelSmall,
+              'Data extracted from your SMS. '
+              'Contact the merchant directly for disputes.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppColors.textMuted.withValues(alpha: 0.7),
+                  ),
             ),
           ),
         ],
@@ -860,28 +1157,27 @@ class _MerchantContactCard extends StatelessWidget {
   }
 }
 
-class _ContactRow extends StatelessWidget {
-  const _ContactRow({
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({
     required this.icon,
     required this.label,
     required this.value,
-    required this.onCopy,
+    this.dimmed = false,
   });
 
   final IconData icon;
   final String label;
   final String value;
-  final VoidCallback onCopy;
+  final bool dimmed;
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark
-            ? Colors.white.withValues(alpha: 0.05)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
@@ -892,30 +1188,31 @@ class _ContactRow extends StatelessWidget {
               color: AppColors.primary.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: AppColors.primary, size: 18),
+            child: Icon(icon, color: AppColors.primary, size: 16),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
+                Text(label,
+                    style: Theme.of(context).textTheme.labelSmall),
                 Text(
                   value,
-                  style: Theme.of(context).textTheme.titleSmall,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: dimmed ? AppColors.textMuted : null,
+                        fontStyle:
+                            dimmed ? FontStyle.italic : FontStyle.normal,
+                      ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.copy, size: 20, color: AppColors.textMuted),
-            onPressed: onCopy,
           ),
         ],
       ),
     );
   }
 }
+

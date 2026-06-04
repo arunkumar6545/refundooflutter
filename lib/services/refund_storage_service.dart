@@ -37,10 +37,11 @@ class RefundStorageService {
     for (final r in newItems) {
       final prev = byId[r.id];
       if (prev != null && prev.manuallyCompleted) {
-        // Keep completed status — user explicitly set this, sync must not revert it
+        // Keep completed status + user's reason — sync must not revert either
         byId[r.id] = r.copyWith(
           status: RefundStatus.completed,
           manuallyCompleted: true,
+          description: prev.description,
         );
       } else {
         byId[r.id] = r;
