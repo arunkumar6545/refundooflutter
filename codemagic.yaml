@@ -30,29 +30,24 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
-      - name: Scaffold iOS Xcode project
-        script: |
-          # flutter create --platforms=ios only adds missing iOS files;
-          # it does NOT touch lib/ or any Dart code.
-          flutter create --platforms=ios --org com.refundoo --project-name refundoo .
-
-      - name: Restore custom Info.plist values
-        script: |
-          PLIST=ios/Runner/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Refundoo"        "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleName Refundoo"               "$PLIST"
-          # Portrait-only
-          /usr/libexec/PlistBuddy -c "Set :UISupportedInterfaceOrientations:0 UIInterfaceOrientationPortrait" "$PLIST" 2>/dev/null || true
-          # Required by flutter_secure_storage when biometrics are available
-          /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 'Used to protect your refund data'" "$PLIST" 2>/dev/null || true
-
       - name: Get Flutter packages
         script: flutter pub get
 
-      - name: Install CocoaPods
-        script: cd ios && pod install
+      - name: Scaffold iOS Xcode project
+        script: |
+          # Adds missing Xcode project files (xcodeproj, AppDelegate, storyboards,
+          # Podfile). Does NOT touch lib/ or existing Dart code.
+          flutter create --platforms=ios --org com.refundoo --project-name refundoo .
+
+      - name: Apply Info.plist customisations
+        script: |
+          PLIST=ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Refundoo"  "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName Refundoo"         "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 'Used to protect your refund data'" "$PLIST" 2>/dev/null || true
 
       - name: Build unsigned IPA
+        # flutter build ipa runs pod install automatically
         script: flutter build ipa --no-codesign --release
 
     artifacts:
@@ -83,6 +78,9 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+
       - name: Scaffold iOS Xcode project
         script: |
           flutter create --platforms=ios --org com.refundoo --project-name refundoo .
@@ -93,20 +91,15 @@ workflows:
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" \
             ios/Runner.xcodeproj/project.pbxproj
 
-      - name: Restore custom Info.plist values
+      - name: Apply Info.plist customisations
         script: |
           PLIST=ios/Runner/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Refundoo"        "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleName Refundoo"               "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Refundoo"  "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName Refundoo"         "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 'Used to protect your refund data'" "$PLIST" 2>/dev/null || true
 
-      - name: Get Flutter packages
-        script: flutter pub get
-
-      - name: Install CocoaPods
-        script: cd ios && pod install
-
       - name: Build signed IPA
+        # flutter build ipa runs pod install automatically
         script: flutter build ipa --release
 
     artifacts:
