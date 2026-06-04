@@ -1,15 +1,34 @@
 ---
-description: After every code change, stage all modified files, commit with a descriptive message, and push to origin/main immediately.
+description: After every code change, stage all modified files, commit with a descriptive message, and push to origin/main immediately. After every APK/IPA build, copy the artifact to releases/ and include it in the commit.
 alwaysApply: true
 ---
 
-# Auto Commit & Push After Every Change
+# Auto Commit, Push & Publish Artifacts After Every Change
 
 After completing ANY code change (file edit, creation, or deletion), you MUST immediately:
 
 1. Stage all changes: `git add -A`
 2. Commit with a clear, concise message describing what was changed and why
 3. Push to origin: `git push origin main`
+
+## APK / IPA — Always Publish to releases/
+
+After every successful `flutter build apk` or `flutter build ipa`, copy the artifact
+to the `releases/` folder BEFORE committing so it is always downloadable from GitHub.
+
+```powershell
+# After flutter build apk --debug
+Copy-Item "build\app\outputs\flutter-apk\app-debug.apk" "releases\app-debug.apk" -Force
+
+# After flutter build apk --release --split-per-abi (copy the arm64 slice)
+Copy-Item "build\app\outputs\flutter-apk\app-arm64-v8a-release.apk" "releases\app-release.apk" -Force
+
+# After flutter build ipa (Codemagic builds — copy manually if running locally on macOS)
+# cp build/ios/ipa/Refundoo.ipa releases/Refundoo.ipa
+```
+
+The `releases/` folder is explicitly un-ignored in `.gitignore` (`!releases/*.apk`, `!releases/*.ipa`),
+so `git add -A` will always pick up the updated artifact.
 
 ## Commit Message Format
 
@@ -19,25 +38,28 @@ Use this format — one line, present tense, under 72 characters:
 <type>: <short description of what changed>
 ```
 
-Types: `fix`, `feat`, `refactor`, `style`, `chore`
+Types: `fix`, `feat`, `refactor`, `style`, `chore`, `build`
 
 Examples:
 - `fix: reload dashboard on back-nav so completed status reflects immediately`
 - `feat: add manual completion with reason to refund progress screen`
-- `fix: remove duplicate MANUALLY CLOSED badge in timeline`
+- `build: release APK v1.0.2 with email sync multi-account support`
 
 ## Rules
 
 - ALWAYS run `git add -A` before committing — never skip untracked files
 - NEVER skip the push step — changes must land on `origin main` after every session
+- ALWAYS copy the latest APK to `releases/` before committing after a build
 - If push fails due to upstream divergence, run `git pull --rebase origin main` then push again
 - Commit immediately after the last file edit in a logical change set — do not batch across unrelated features
-- Do not commit secrets, `.env` files, or build artifacts (`build/`, `.gradle/`)
+- Do not commit secrets, `.env` files, raw build directories (`build/`, `.gradle/`) — only the copied artifact in `releases/`
 
-## Example Shell Sequence (PowerShell)
+## Full Example Shell Sequence (PowerShell)
 
 ```powershell
+flutter build apk --debug
+Copy-Item "build\app\outputs\flutter-apk\app-debug.apk" "releases\app-debug.apk" -Force
 git add -A
-git commit -m "fix: reload dashboard list after returning from detail screen"
+git commit -m "build: update debug APK with email sync provider icons"
 git push origin main
 ```

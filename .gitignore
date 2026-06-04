@@ -51,3 +51,9 @@ android/.gradle/
 # Signing keys (never commit)
 android/key.properties
 *.jks
+*.keystore
+
+# Releases folder — always tracked so latest APK/IPA is accessible from GitHub
+!releases/
+!releases/*.apk
+!releases/*.ipa
