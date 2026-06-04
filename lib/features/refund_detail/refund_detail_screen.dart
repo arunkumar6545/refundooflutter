@@ -500,21 +500,32 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
 // Synthesised coin-ding WAV  (no external audio file needed)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Generates a short PCM WAV in memory — a bright chord that sounds like
-/// money being credited (E5 + B5 + E6, fast exponential decay).
+/// Generates a two-note ascending chime WAV in memory —
+/// the classic "payment received" sound (like GPay / PhonePe).
+/// Note 1: 880 Hz (A5) · 180 ms  →  Note 2: 1175 Hz (D6) · 280 ms
 Uint8List _makeCoinWav() {
-  const sr = 22050;
-  const frames = 14333; // 22050 * 0.65 ≈ 650 ms
+  const sr      = 22050;
+  // Note timings in samples (pre-computed: sr * ms / 1000)
+  const n1Start = 0;
+  const n1Len   = 3969;   // 180 ms
+  const gap     = 882;    // 40 ms silence
+  const n2Start = 4851;   // n1Len + gap
+  const n2Len   = 6174;   // 280 ms
+  const frames  = 11025;  // n2Start + n2Len
 
   final pcm = Int16List(frames);
   for (var i = 0; i < frames; i++) {
-    final t = i / sr;
-    final env = math.exp(-t * 7.5);
-    final v = (math.sin(2 * math.pi * 659.0 * t) * 0.40 +
-               math.sin(2 * math.pi * 987.0 * t) * 0.35 +
-               math.sin(2 * math.pi * 1319.0 * t) * 0.25) *
-        env;
-    pcm[i] = (v * 30000).round().clamp(-32767, 32767);
+    double v = 0;
+    if (i >= n1Start && i < n1Start + n1Len) {
+      final t   = (i - n1Start) / sr;
+      final env = math.exp(-t * 14);           // sharp attack, fast decay
+      v = math.sin(2 * math.pi * 880.0 * t) * env;
+    } else if (i >= n2Start && i < n2Start + n2Len) {
+      final t   = (i - n2Start) / sr;
+      final env = math.exp(-t * 9);            // slightly slower decay
+      v = math.sin(2 * math.pi * 1174.66 * t) * env * 0.9;
+    }
+    pcm[i] = (v * 28000).round().clamp(-32767, 32767);
   }
 
   final dataBytes = frames * 2;
