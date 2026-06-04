@@ -262,11 +262,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
     var newCount = 0;
 
     // ── SMS scan (all messages) ──────────────────────────────────────────
-    final smsEnabled = prefs.getBool('sms_enabled') ?? false;
-    if (smsEnabled && Platform.isAndroid) {
-      final fromSms = await _smsScanner.scanInbox();
+    // Treat "never configured" the same as "enabled" so a fresh install /
+    // reinstall (which wipes SharedPreferences) still works on first sync.
+    final smsExplicitlyDisabled =
+        prefs.containsKey('sms_enabled') && !(prefs.getBool('sms_enabled')!);
+    if (!smsExplicitlyDisabled && Platform.isAndroid) {
+      final fromSms = await _smsScanner.scanInbox(); // requests permission internally
       newCount += fromSms.length;
       if (fromSms.isNotEmpty) await _storage.mergeAndSave(fromSms);
+      // Persist the flag so the settings screen reflects the granted state
+      if (await _smsScanner.hasPermission) {
+        await prefs.setBool('sms_enabled', true);
+      }
     }
 
     // ── Email scan (last 30 days) ────────────────────────────────────────
