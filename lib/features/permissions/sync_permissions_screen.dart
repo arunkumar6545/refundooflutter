@@ -17,9 +17,8 @@ class SyncPermissionsScreen extends StatefulWidget {
 
 class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
   bool _smsEnabled = true;
-  bool _emailEnabled = false;
   bool _loadingPrefs = true;
-  String? _approvedEmailAccount;
+  List<String> _approvedEmailAccounts = [];
 
   final AuthService _auth = AuthService();
   final EmailScannerService _emailScanner = EmailScannerService();
@@ -32,11 +31,10 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
 
   Future<void> _loadSavedPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final approved = await _emailScanner.approvedAccount;
+    final accounts = await _emailScanner.approvedAccounts;
     setState(() {
       _smsEnabled = prefs.getBool('sms_enabled') ?? true;
-      _emailEnabled = prefs.getBool('email_sync_enabled') ?? false;
-      _approvedEmailAccount = approved;
+      _approvedEmailAccounts = accounts;
       _loadingPrefs = false;
     });
   }
@@ -80,35 +78,55 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
     }
   }
 
-  Future<void> _onEmailToggleChanged(bool value) async {
-    if (!value) {
-      await _emailScanner.setEnabled(false);
-      setState(() { _emailEnabled = false; _approvedEmailAccount = null; });
-      return;
-    }
-
-    // Must be signed in with Google to use Gmail
-    final account = _auth.currentUser;
-    if (account == null) {
-      if (!mounted) return;
+  /// Called when user taps an email provider icon.
+  Future<void> _onProviderTap(String provider) async {
+    if (provider != 'gmail') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Sign in with Google first to enable email sync.'),
+        SnackBar(
+          content: Text('$provider sync is coming soon!'),
           behavior: SnackBarBehavior.floating,
         ),
       );
       return;
     }
 
-    // Request Gmail readonly scope
+    // Gmail: sign in if needed, then request scope
+    var account = _auth.currentUser;
+    if (account == null) {
+      setState(() => _loadingPrefs = true);
+      try { account = await _auth.signInSilently(); } catch (_) {}
+      if (account == null) {
+        try { account = await _auth.signIn(); } catch (_) {}
+      }
+      if (mounted) setState(() => _loadingPrefs = false);
+      if (account == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Google sign-in failed. Please try again.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Already approved — nothing to do
+    if (_approvedEmailAccounts.contains(account.email)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${account.email} is already added.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     final granted = await _auth.requestGmailScope();
     if (!mounted) return;
     if (granted) {
-      await _emailScanner.setEnabled(true, accountEmail: account.email);
-      setState(() {
-        _emailEnabled = true;
-        _approvedEmailAccount = account.email;
-      });
+      await _emailScanner.addApprovedAccount(account.email);
+      setState(() => _approvedEmailAccounts = [..._approvedEmailAccounts, account!.email]);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Gmail sync enabled for ${account.email}'),
@@ -125,6 +143,11 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
     }
   }
 
+  Future<void> _removeEmailAccount(String email) async {
+    await _emailScanner.removeApprovedAccount(email);
+    setState(() => _approvedEmailAccounts = _approvedEmailAccounts.where((e) => e != email).toList());
+  }
+
   Future<void> _finishSetup() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('sms_enabled', _smsEnabled);
@@ -132,6 +155,8 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
     if (!mounted) return;
     context.go('/dashboard');
   }
+
+  // ── unused field removed: _emailEnabled now derived from _approvedEmailAccounts
 
   @override
   Widget build(BuildContext context) {
@@ -180,14 +205,11 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
                 onChanged: _onSmsToggleChanged,
               ),
               const SizedBox(height: 16),
-              _PermissionCard(
-                icon: Icons.mail_outline,
-                title: 'Email Sync',
-                description: _approvedEmailAccount != null
-                    ? 'Syncing Gmail for $_approvedEmailAccount (last 30 days). Tap to disable.'
-                    : 'Scan your Gmail inbox for refund confirmations from the last 30 days. Requires Google sign-in and Gmail read access.',
-                value: _emailEnabled,
-                onChanged: _onEmailToggleChanged,
+              _EmailSyncSection(
+                approvedAccounts: _approvedEmailAccounts,
+                onProviderTap: _onProviderTap,
+                onRemove: _removeEmailAccount,
+                isDark: isDark,
               ),
               const SizedBox(height: 32),
               Text(
@@ -265,6 +287,232 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Email Sync section — provider icon grid + approved accounts list
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EmailProvider {
+  const _EmailProvider(this.id, this.label, this.color, this.icon, {this.available = false});
+  final String id;
+  final String label;
+  final Color color;
+  final IconData icon;
+  final bool available;
+}
+
+const _kEmailProviders = [
+  _EmailProvider('gmail',   'Gmail',       Color(0xFFEA4335), Icons.mail_rounded,            available: true),
+  _EmailProvider('outlook', 'Outlook',     Color(0xFF0078D4), Icons.mail_outline_rounded),
+  _EmailProvider('yahoo',   'Yahoo Mail',  Color(0xFF6001D2), Icons.alternate_email_rounded),
+  _EmailProvider('apple',   'Apple Mail',  Color(0xFF1C7CD6), Icons.mark_email_read_rounded),
+];
+
+class _EmailSyncSection extends StatelessWidget {
+  const _EmailSyncSection({
+    required this.approvedAccounts,
+    required this.onProviderTap,
+    required this.onRemove,
+    required this.isDark,
+  });
+
+  final List<String> approvedAccounts;
+  final void Function(String providerId) onProviderTap;
+  final void Function(String email) onRemove;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.05) : AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(32),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row
+          Row(
+            children: [
+              Container(
+                width: 48, height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(Icons.mail_outline, color: AppColors.primary, size: 28),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text('Email Sync',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 20)),
+          const SizedBox(height: 4),
+          Text(
+            'Tap a provider to connect your inbox. We scan the last 30 days for refund confirmations — nothing leaves your device.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 20),
+
+          // Provider icon grid
+          Row(
+            children: _kEmailProviders.map((p) {
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: _ProviderIcon(
+                    provider: p,
+                    isDark: isDark,
+                    onTap: () => onProviderTap(p.id),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+          // Approved accounts list
+          if (approvedAccounts.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            Divider(color: AppColors.primary.withValues(alpha: 0.12)),
+            const SizedBox(height: 12),
+            Text(
+              'Connected accounts',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: AppColors.textMuted,
+                letterSpacing: 0.8,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ...approvedAccounts.map((email) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _ApprovedAccountTile(
+                email: email,
+                isDark: isDark,
+                onRemove: () => onRemove(email),
+              ),
+            )),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ProviderIcon extends StatelessWidget {
+  const _ProviderIcon({
+    required this.provider,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  final _EmailProvider provider;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Stack(
+            children: [
+              Container(
+                width: 56, height: 56,
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? provider.color.withValues(alpha: 0.2)
+                      : provider.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: provider.color.withValues(alpha: provider.available ? 0.5 : 0.25),
+                    width: 1.5,
+                  ),
+                ),
+                child: Icon(provider.icon, color: provider.color, size: 26),
+              ),
+              if (!provider.available)
+                Positioned(
+                  right: 0, top: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.textMuted,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text('Soon',
+                        style: TextStyle(fontSize: 7, color: Colors.white, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            provider.label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: provider.available
+                  ? (isDark ? Colors.white : const Color(0xFF1E293B))
+                  : AppColors.textMuted,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ApprovedAccountTile extends StatelessWidget {
+  const _ApprovedAccountTile({
+    required this.email,
+    required this.isDark,
+    required this.onRemove,
+  });
+
+  final String email;
+  final bool isDark;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: isDark ? 0.12 : 0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, color: AppColors.success, size: 16),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              email,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.success,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          GestureDetector(
+            onTap: onRemove,
+            child: Icon(Icons.close, size: 16,
+                color: AppColors.success.withValues(alpha: 0.7)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _PermissionCard extends StatelessWidget {
   const _PermissionCard({

@@ -79,12 +79,28 @@ class AuthService {
     return false;
   }
 
+  /// Silent sign-in — reuses existing Google session without a dialog.
+  /// Returns null if no session is available.
+  Future<GoogleSignInAccount?> signInSilently() async {
+    try {
+      final account = await _googleSignIn.signInSilently();
+      if (account == null) return null;
+      _currentUser = account;
+      _isGuest = false;
+      await _persistUser(account);
+      return account;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Trigger the Google account chooser dialog.
   Future<GoogleSignInAccount?> signIn() async {
     try {
       final account = await _googleSignIn.signIn();
       if (account == null) return null;
       _currentUser = account;
+      _isGuest = false;
       await _persistUser(account);
       return account;
     } catch (e) {

@@ -11,10 +11,11 @@ import 'refund_detection_service.dart';
 /// Scans Gmail inbox for refund-related emails (last 30 days only).
 /// Uses the Gmail REST API with the access token from Google Sign-In.
 class EmailScannerService {
-  // Non-sensitive toggle in regular prefs
-  static const _keyEmailEnabled = 'email_sync_enabled';
-  // Approved account email is PII — store encrypted
-  static const _secKeyApprovedEmail = 'email_sync_account_sec';
+  static const _keyEmailEnabled    = 'email_sync_enabled';
+  // List of approved emails stored as JSON — PII so encrypted
+  static const _secKeyApprovedEmails = 'email_sync_accounts_v2';
+  // Legacy single-account key kept for migration read
+  static const _secKeyApprovedEmail  = 'email_sync_account_sec';
   static const _gmailBase = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
   static const _secureStorage = FlutterSecureStorage(
@@ -26,22 +27,64 @@ class EmailScannerService {
   final AuthService _auth = AuthService();
 
   Future<bool> get isEnabled async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_keyEmailEnabled) ?? false;
+    final accounts = await approvedAccounts;
+    return accounts.isNotEmpty;
   }
 
-  Future<void> setEnabled(bool value, {String? accountEmail}) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyEmailEnabled, value);
-    if (accountEmail != null) {
-      await _secureStorage.write(key: _secKeyApprovedEmail, value: accountEmail);
-    } else if (!value) {
+  /// Returns all approved email addresses (migrates legacy single-account entry).
+  Future<List<String>> get approvedAccounts async {
+    final raw = await _secureStorage.read(key: _secKeyApprovedEmails);
+    if (raw != null) {
+      try {
+        return List<String>.from(jsonDecode(raw) as List);
+      } catch (_) {}
+    }
+    // Migrate old single-account entry
+    final legacy = await _secureStorage.read(key: _secKeyApprovedEmail);
+    if (legacy != null && legacy.isNotEmpty) {
+      await _saveAccounts([legacy]);
       await _secureStorage.delete(key: _secKeyApprovedEmail);
+      return [legacy];
+    }
+    return [];
+  }
+
+  Future<void> _saveAccounts(List<String> accounts) async {
+    await _secureStorage.write(
+      key: _secKeyApprovedEmails,
+      value: jsonEncode(accounts),
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyEmailEnabled, accounts.isNotEmpty);
+  }
+
+  Future<void> addApprovedAccount(String email) async {
+    final accounts = await approvedAccounts;
+    if (!accounts.contains(email)) {
+      accounts.add(email);
+      await _saveAccounts(accounts);
     }
   }
 
+  Future<void> removeApprovedAccount(String email) async {
+    final accounts = await approvedAccounts;
+    accounts.remove(email);
+    await _saveAccounts(accounts);
+  }
+
+  /// Legacy helper kept for backward compat.
+  Future<void> setEnabled(bool value, {String? accountEmail}) async {
+    if (!value) {
+      await _saveAccounts([]);
+    } else if (accountEmail != null) {
+      await addApprovedAccount(accountEmail);
+    }
+  }
+
+  /// Legacy single-account getter — returns first approved account or null.
   Future<String?> get approvedAccount async {
-    return await _secureStorage.read(key: _secKeyApprovedEmail);
+    final list = await approvedAccounts;
+    return list.isEmpty ? null : list.first;
   }
 
   /// Scan Gmail inbox for refund emails from the last 30 days.
