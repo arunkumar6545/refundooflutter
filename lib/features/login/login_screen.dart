@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/responsive.dart';
 import '../../core/widgets/app_logo.dart';
 import '../../services/auth_service.dart';
 
@@ -129,7 +130,10 @@ class _LoginScreenState extends State<LoginScreen>
       body: FadeTransition(
         opacity: _fade,
         child: SafeArea(
-          child: Padding(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Column(
               children: [
@@ -217,6 +221,8 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
                 const SizedBox(height: 32),
               ],
+            ),
+          ),
             ),
           ),
         ),

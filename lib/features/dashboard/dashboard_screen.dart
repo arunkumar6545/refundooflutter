@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/responsive.dart';
 import '../../core/widgets/app_logo.dart';
 import '../../core/widgets/app_drawer.dart';
 import '../../models/refund_item.dart';
@@ -137,7 +138,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   /// Label describing what _waitDays means.
   String get _waitLabel {
     final days = _waitDays;
-    if (days == 0) return 'All clear';
+    if (days == 0) return '0 days';
     if (days == 1) return '1 day avg wait';
     return '$days days avg wait';
   }
@@ -296,163 +297,300 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final tablet = context.isTablet;
     return Scaffold(
       key: _scaffoldKey,
-      drawer: const AppDrawer(currentRoute: '/dashboard'),
+      // Drawer only shown on phone (tablet uses permanent NavigationRail)
+      drawer: tablet ? null : const AppDrawer(currentRoute: '/dashboard'),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            // Pin to bottom-right on first layout
-            _fabOffset ??= Offset(
-              constraints.maxWidth - 72,
-              constraints.maxHeight - 80,
-            );
-            return Stack(
-              children: [
-                CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(child: _buildAppBar(context)),
-                    SliverToBoxAdapter(child: _buildHeadline(context)),
-                    SliverToBoxAdapter(child: _buildStatsRow(context)),
-                    SliverToBoxAdapter(
-                        child: _buildSectionHeader(context, 'Refund Categories', 'View all')),
-                    SliverToBoxAdapter(child: _buildCategoriesGrid(context)),
-                    SliverToBoxAdapter(
-                        child: _buildSectionHeader(context, 'Recent Activity', '')),
-                    if (_hasActiveFilter)
-                      SliverToBoxAdapter(child: _buildClearFilterBar(context)),
-                    SliverToBoxAdapter(child: _buildFilterChips(context)),
-                    if (_loading)
-                      const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(
-                              child: CircularProgressIndicator(color: AppColors.primary)),
-                        ),
-                      )
-                    else if (_filteredRefunds.isEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 48),
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.receipt_long_outlined,
-                                size: 64,
-                                color: AppColors.textMuted.withValues(alpha: 0.4),
+        child: Row(
+          children: [
+            // ── Tablet: permanent left navigation rail ──────────────────
+            if (tablet) _buildNavRail(context),
+            if (tablet)
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+              ),
+
+            // ── Main scroll area ────────────────────────────────────────
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Pin FAB to bottom-right on first layout
+                  _fabOffset ??= Offset(
+                    constraints.maxWidth - 72,
+                    constraints.maxHeight - 80,
+                  );
+                  return Stack(
+                    children: [
+                      CustomScrollView(
+                        slivers: [
+                          SliverToBoxAdapter(child: _buildAppBar(context, tablet)),
+                          SliverToBoxAdapter(child: _buildHeadline(context)),
+                          SliverToBoxAdapter(child: _buildStatsRow(context)),
+                          SliverToBoxAdapter(
+                              child: _buildSectionHeader(context, 'Refund Categories', 'View all')),
+                          SliverToBoxAdapter(child: _buildCategoriesGrid(context, constraints.maxWidth)),
+                          SliverToBoxAdapter(
+                              child: _buildSectionHeader(context, 'Recent Activity', '')),
+                          if (_hasActiveFilter)
+                            SliverToBoxAdapter(child: _buildClearFilterBar(context)),
+                          SliverPersistentHeader(
+                            pinned: true,
+                            delegate: _FilterChipsDelegate(
+                              child: _buildFilterChips(context),
+                            ),
+                          ),
+                          if (_loading)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Center(
+                                    child: CircularProgressIndicator(color: AppColors.primary)),
                               ),
-                              const SizedBox(height: 16),
-                              Text(
-                                _refunds.isEmpty
-                                    ? 'No refunds tracked yet'
-                                    : 'No results',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
-                                    ?.copyWith(color: AppColors.textMuted),
+                            )
+                          else if (_filteredRefunds.isEmpty)
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 24, vertical: 48),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.receipt_long_outlined,
+                                      size: 64,
+                                      color: AppColors.textMuted.withValues(alpha: 0.4),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      _refunds.isEmpty
+                                          ? 'No refunds tracked yet'
+                                          : 'No results',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(color: AppColors.textMuted),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _refunds.isEmpty
+                                          ? 'Tap + to add one manually or use sync to scan SMS'
+                                          : 'Try a different filter',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                              color: AppColors.textMuted
+                                                  .withValues(alpha: 0.7)),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                _refunds.isEmpty
-                                    ? 'Tap + to add one manually or use sync to scan SMS'
-                                    : 'Try a different filter',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                        color: AppColors.textMuted
-                                            .withValues(alpha: 0.7)),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
+                            )
+                          else
+                            _filteredRefunds.length >= 4 && context.isTablet
+                                ? SliverPadding(
+                                    padding: EdgeInsets.symmetric(horizontal: context.hPad),
+                                    sliver: SliverGrid(
+                                      gridDelegate:
+                                          const SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 2,
+                                        childAspectRatio: 3.5,
+                                        mainAxisSpacing: 0,
+                                        crossAxisSpacing: 12,
+                                      ),
+                                      delegate: SliverChildBuilderDelegate(
+                                        (_, i) {
+                                          final item = _filteredRefunds[i];
+                                          return _ActivityTile(
+                                            item: item,
+                                            onTap: () async {
+                                              await context.push('/refund/${item.id}');
+                                              if (mounted) _loadRefunds(showLoader: false);
+                                            },
+                                          );
+                                        },
+                                        childCount: _filteredRefunds.length,
+                                      ),
+                                    ),
+                                  )
+                                : SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (_, i) {
+                                        final item = _filteredRefunds[i];
+                                        return _ActivityTile(
+                                          item: item,
+                                          onTap: () async {
+                                            await context.push('/refund/${item.id}');
+                                            if (mounted) _loadRefunds(showLoader: false);
+                                          },
+                                        );
+                                      },
+                                      childCount: _filteredRefunds.length,
+                                    ),
+                                  ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                        ],
+                      ),
+
+                      // ── Draggable sync FAB ────────────────────────────
+                      Positioned(
+                        left: _fabOffset!.dx,
+                        top: _fabOffset!.dy,
+                        child: GestureDetector(
+                          onPanUpdate: (details) {
+                            setState(() {
+                              _fabOffset = Offset(
+                                (_fabOffset!.dx + details.delta.dx)
+                                    .clamp(0.0, constraints.maxWidth - 56),
+                                (_fabOffset!.dy + details.delta.dy)
+                                    .clamp(0.0, constraints.maxHeight - 56),
+                              );
+                            });
+                          },
+                          child: _SyncFab(
+                            onPressed: _syncing ? null : _quickSync,
+                            syncing: _syncing,
                           ),
                         ),
-                      )
-                    else
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (_, i) {
-                            final item = _filteredRefunds[i];
-                            return _ActivityTile(
-                              item: item,
-                              onTap: () async {
-                                await context.push('/refund/${item.id}');
-                                if (mounted) _loadRefunds(showLoader: false);
-                              },
-                            );
-                          },
-                          childCount: _filteredRefunds.length,
-                        ),
                       ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                  ],
-                ),
-
-                // ── Draggable sync FAB ──────────────────────────────────
-                Positioned(
-                  left: _fabOffset!.dx,
-                  top: _fabOffset!.dy,
-                  child: GestureDetector(
-                    onPanUpdate: (details) {
-                      setState(() {
-                        _fabOffset = Offset(
-                          (_fabOffset!.dx + details.delta.dx)
-                              .clamp(0.0, constraints.maxWidth - 56),
-                          (_fabOffset!.dy + details.delta.dy)
-                              .clamp(0.0, constraints.maxHeight - 56),
-                        );
-                      });
-                    },
-                    child: _SyncFab(
-                      onPressed: _syncing ? null : _quickSync,
-                      syncing: _syncing,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
-      bottomNavigationBar: _buildBottomBar(context),
+      // Bottom nav only shown on phone
+      bottomNavigationBar: tablet ? null : _buildBottomBar(context),
     );
   }
 
-  Widget _buildAppBar(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Row(
-        children: [
-          // Hamburger → opens side drawer
-          IconButton(
-            icon: const Icon(Icons.menu_rounded, size: 28),
-            tooltip: 'Menu',
-            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-          ),
-          // App logo + name (centred)
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+  Widget _buildNavRail(BuildContext context) {
+    final overdueCount = _refunds.where((r) => r.isOverdue).length;
+    return NavigationRail(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      selectedIndex: 0,
+      extended: context.isExpanded,
+      labelType: context.isExpanded ? NavigationRailLabelType.none : NavigationRailLabelType.selected,
+      leading: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          children: [
+            const AppLogo(size: 28, borderRadius: 9, showGlow: false),
+            const SizedBox(height: 4),
+            if (context.isExpanded)
+              Text(
+                'Refundoo',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+              ),
+          ],
+        ),
+      ),
+      trailing: Expanded(
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const AppLogo(size: 26, borderRadius: 8, showGlow: false),
-                const SizedBox(width: 8),
-                Text(
-                  'Refundoo',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                      ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline, size: 26),
+                  tooltip: 'Add refund',
+                  onPressed: () => context.push('/add-refund'),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined, size: 24),
+                  tooltip: 'Settings',
+                  onPressed: () => context.push('/profile'),
                 ),
               ],
             ),
           ),
-          // Add refund
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline, size: 28),
-            tooltip: 'Add refund',
-            onPressed: () => context.push('/add-refund'),
+        ),
+      ),
+      destinations: [
+        const NavigationRailDestination(
+          icon: Icon(Icons.grid_view_outlined),
+          selectedIcon: Icon(Icons.grid_view_rounded),
+          label: Text('Home'),
+        ),
+        const NavigationRailDestination(
+          icon: Icon(Icons.receipt_long_outlined),
+          selectedIcon: Icon(Icons.receipt_long_rounded),
+          label: Text('Refunds'),
+        ),
+        NavigationRailDestination(
+          icon: overdueCount > 0
+              ? Badge(
+                  label: Text('$overdueCount'),
+                  child: const Icon(Icons.bar_chart_outlined),
+                )
+              : const Icon(Icons.bar_chart_outlined),
+          selectedIcon: const Icon(Icons.bar_chart_rounded),
+          label: const Text('Reports'),
+        ),
+      ],
+      onDestinationSelected: (i) {
+        if (i == 2) context.push('/reports');
+      },
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context, bool tablet) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(tablet ? 24 : 16, 16, 16, 8),
+      child: Row(
+        children: [
+          // Hamburger — phone only (tablet uses persistent NavigationRail)
+          if (!tablet)
+            IconButton(
+              icon: const Icon(Icons.menu_rounded, size: 28),
+              tooltip: 'Menu',
+              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+            ),
+          // App logo + name (centred on phone, left-aligned on tablet)
+          Expanded(
+            child: Row(
+              mainAxisAlignment:
+                  tablet ? MainAxisAlignment.start : MainAxisAlignment.center,
+              children: [
+                if (!tablet) ...[
+                  const AppLogo(size: 26, borderRadius: 8, showGlow: false),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Refundoo',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                        ),
+                  ),
+                ] else
+                  Text(
+                    'Dashboard',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.3,
+                        ),
+                  ),
+              ],
+            ),
           ),
+          // Add refund — phone only (tablet shows it in rail trailing)
+          if (!tablet)
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline, size: 28),
+              tooltip: 'Add refund',
+              onPressed: () => context.push('/add-refund'),
+            ),
         ],
       ),
     );
@@ -460,7 +598,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildHeadline(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      padding: EdgeInsets.symmetric(horizontal: context.hPad, vertical: 24),
       child: Column(
         children: [
           RichText(
@@ -470,19 +608,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     fontSize: 36,
                     color: Theme.of(context).colorScheme.onSurface,
                   ),
-              children: [
-                const TextSpan(text: 'You have '),
-                TextSpan(
-                  text: '$_pendingCurrency${_pendingAmount.toStringAsFixed(0)}',
-                  style: const TextStyle(color: AppColors.primary),
-                ),
-                const TextSpan(text: ' on the way.'),
-              ],
+              children: _pendingAmount > 0
+                  ? [
+                      const TextSpan(text: 'You have '),
+                      TextSpan(
+                        text: '$_pendingCurrency${_pendingAmount.toStringAsFixed(0)}',
+                        style: const TextStyle(color: AppColors.primary),
+                      ),
+                      const TextSpan(text: ' on the way.'),
+                    ]
+                  : [
+                      const TextSpan(text: 'No pending\nrefunds '),
+                      TextSpan(
+                        text: '🎉',
+                        style: TextStyle(
+                          fontSize: 32,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Estimated arrival in 3-5 business days',
+            _pendingAmount > 0
+                ? 'Estimated arrival in 3-5 business days'
+                : 'Sync to scan for new refunds',
             style: Theme.of(context).textTheme.bodySmall,
             textAlign: TextAlign.center,
           ),
@@ -493,7 +644,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildStatsRow(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: EdgeInsets.symmetric(horizontal: context.hPad),
       child: Row(
         children: [
               Expanded(
@@ -528,7 +679,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildSectionHeader(BuildContext context, String title, String action) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+      padding: EdgeInsets.fromLTRB(context.hPad, 24, context.hPad, 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -550,7 +701,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildCategoriesGrid(BuildContext context) {
+  Widget _buildCategoriesGrid(BuildContext context, double contentWidth) {
     final cats = _categories;
     double amountFor(RefundCategory c) =>
         cats.where((x) => x.category == c).firstOrNull?.amount ?? 0;
@@ -565,7 +716,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _filterCategory = c;
         });
 
-    // Uniform 2-column grid: avoids overflow on narrow phones
     final categories = [
       RefundCategory.travel,
       RefundCategory.retail,
@@ -575,45 +725,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
       RefundCategory.entertainment,
     ];
 
+    // Adaptive column count based on available width
+    final cols = contentWidth >= kExpandedBreak ? 4
+               : contentWidth >= kCompactBreak  ? 3
+               : 2;
+    final hPad = context.hPad;
+
     final rows = <Widget>[];
-    for (var i = 0; i < categories.length; i += 2) {
-      final left = categories[i];
-      final right = i + 1 < categories.length ? categories[i + 1] : null;
+    for (var i = 0; i < categories.length; i += cols) {
+      final rowCats = categories.skip(i).take(cols).toList();
+      // Pad row to full cols so widths are even
+      while (rowCats.length < cols) rowCats.add(rowCats.last); // placeholder fill handled below
+
       rows.add(
         Row(
           children: [
-            Expanded(
-              child: _CategoryBento(
-                category: left,
-                amount: amountFor(left),
-                count: countFor(left),
-                pending: pendingFor(left),
-                currencySymbol: currencyFor(left),
-                onTap: () => onCategoryTap(left),
-              ),
-            ),
-            if (right != null) ...[
-              const SizedBox(width: 12),
+            for (var j = 0; j < cols; j++) ...[
+              if (j > 0) const SizedBox(width: 12),
               Expanded(
-                child: _CategoryBento(
-                  category: right,
-                  amount: amountFor(right),
-                  count: countFor(right),
-                  pending: pendingFor(right),
-                  currencySymbol: currencyFor(right),
-                  onTap: () => onCategoryTap(right),
-                ),
+                child: j < rowCats.length && i + j < categories.length
+                    ? _CategoryBento(
+                        category: rowCats[j],
+                        amount: amountFor(rowCats[j]),
+                        count: countFor(rowCats[j]),
+                        pending: pendingFor(rowCats[j]),
+                        currencySymbol: currencyFor(rowCats[j]),
+                        onTap: () => onCategoryTap(rowCats[j]),
+                      )
+                    : const SizedBox.shrink(),
               ),
-            ] else
-              const Expanded(child: SizedBox()),
+            ],
           ],
         ),
       );
-      if (i + 2 < categories.length) rows.add(const SizedBox(height: 12));
+      if (i + cols < categories.length) rows.add(const SizedBox(height: 12));
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: EdgeInsets.symmetric(horizontal: hPad),
       child: Column(children: rows),
     );
   }
@@ -795,6 +944,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sticky header delegate for the filter chips row
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FilterChipsDelegate extends SliverPersistentHeaderDelegate {
+  const _FilterChipsDelegate({required this.child});
+
+  final Widget child;
+
+  // Chip height (≈32px) + 12px top + 12px bottom
+  static const double _height = 56.0;
+
+  @override
+  double get minExtent => _height;
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Material(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      elevation: shrinkOffset > 0 ? 1 : 0,
+      shadowColor: Colors.black12,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: child,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(_FilterChipsDelegate old) => child != old.child;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _BentoCard extends StatelessWidget {
   const _BentoCard({

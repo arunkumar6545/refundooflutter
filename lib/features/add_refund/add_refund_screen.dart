@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/responsive.dart';
 import '../../models/refund_item.dart';
 import '../../services/refund_storage_service.dart';
 
@@ -112,8 +113,11 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
         title: const Text('Add Refund'),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: SingleChildScrollView(
+          padding: EdgeInsets.symmetric(horizontal: context.hPad),
           child: Form(
             key: _formKey,
             child: Column(
@@ -424,6 +428,8 @@ class _AddRefundScreenState extends State<AddRefundScreen> {
                 ),
                 const SizedBox(height: 40),
               ],
+            ),
+          ),
             ),
           ),
         ),

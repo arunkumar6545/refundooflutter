@@ -1,6 +1,11 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/responsive.dart';
 import '../../models/refund_item.dart';
 import '../../models/refund_timeline_step.dart';
 import '../../services/refund_storage_service.dart';
@@ -20,6 +25,7 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
   final RefundStorageService _storage = RefundStorageService();
   RefundItem? _refund;
   bool _loading = true;
+  bool _showCoins = false;
 
   static List<RefundTimelineStep> _timelineFor(RefundItem? refund) {
     if (refund == null) return [];
@@ -108,6 +114,12 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
       _refund = refund;
       _loading = false;
     });
+    // Play celebration if refund is already completed
+    if (refund?.status == RefundStatus.completed) {
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (mounted) setState(() => _showCoins = true);
+      });
+    }
   }
 
   Future<void> _showCurrencyPicker(BuildContext context) async {
@@ -249,7 +261,10 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
       refundIssuedAt: refund.refundIssuedAt ?? DateTime.now(),
     );
     await _storage.mergeAndSave([updated]);
-    setState(() => _refund = updated);
+    setState(() {
+      _refund = updated;
+      _showCoins = true;   // trigger coin animation
+    });
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -346,7 +361,8 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
     }
     final refund = _refund!;
     final steps = _timelineFor(refund);
-    return Scaffold(
+    return Stack(children: [
+    Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 20),
@@ -360,8 +376,11 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: context.contentMaxWidth),
+          child: SingleChildScrollView(
+        padding: EdgeInsets.symmetric(horizontal: context.hPad),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -420,10 +439,13 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
           ],
         ),
       ),
+        ),
+      ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
           child: refund.status == RefundStatus.completed
+
               ? Container(
                   height: 52,
                   decoration: BoxDecoration(
@@ -466,9 +488,308 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
                 ),
         ),
       ),
+    ),
+    // Coin celebration overlay
+    if (_showCoins)
+      _CoinCelebration(onDone: () => setState(() => _showCoins = false)),
+    ]);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Synthesised coin-ding WAV  (no external audio file needed)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Generates a short PCM WAV in memory — a bright chord that sounds like
+/// money being credited (E5 + B5 + E6, fast exponential decay).
+Uint8List _makeCoinWav() {
+  const sr = 22050;
+  const frames = 14333; // 22050 * 0.65 ≈ 650 ms
+
+  final pcm = Int16List(frames);
+  for (var i = 0; i < frames; i++) {
+    final t = i / sr;
+    final env = math.exp(-t * 7.5);
+    final v = (math.sin(2 * math.pi * 659.0 * t) * 0.40 +
+               math.sin(2 * math.pi * 987.0 * t) * 0.35 +
+               math.sin(2 * math.pi * 1319.0 * t) * 0.25) *
+        env;
+    pcm[i] = (v * 30000).round().clamp(-32767, 32767);
+  }
+
+  final dataBytes = frames * 2;
+  final buf = ByteData(44 + dataBytes);
+
+  void tag(int o, String s) {
+    for (var i = 0; i < s.length; i++) buf.setUint8(o + i, s.codeUnitAt(i));
+  }
+
+  tag(0, 'RIFF');
+  buf.setUint32(4, 36 + dataBytes, Endian.little);
+  tag(8, 'WAVE');
+  tag(12, 'fmt ');
+  buf.setUint32(16, 16, Endian.little);
+  buf.setUint16(20, 1, Endian.little);   // PCM
+  buf.setUint16(22, 1, Endian.little);   // mono
+  buf.setUint32(24, sr, Endian.little);
+  buf.setUint32(28, sr * 2, Endian.little);
+  buf.setUint16(32, 2, Endian.little);
+  buf.setUint16(34, 16, Endian.little);
+  tag(36, 'data');
+  buf.setUint32(40, dataBytes, Endian.little);
+
+  final out = Uint8List(44 + dataBytes);
+  out.setAll(0, buf.buffer.asUint8List(0, 44));
+  for (var i = 0; i < frames; i++) {
+    final s = pcm[i];
+    out[44 + i * 2]     = s & 0xFF;
+    out[44 + i * 2 + 1] = (s >> 8) & 0xFF;
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Coin celebration animation
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CoinCelebration extends StatefulWidget {
+  const _CoinCelebration({required this.onDone});
+  final VoidCallback onDone;
+
+  @override
+  State<_CoinCelebration> createState() => _CoinCelebrationState();
+}
+
+class _CoinCelebrationState extends State<_CoinCelebration>
+    with TickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final List<_CoinParticle> _particles;
+  AudioPlayer? _audio;
+  static final _rng = math.Random();
+
+  @override
+  void initState() {
+    super.initState();
+    _particles = List.generate(24, (_) => _CoinParticle(_rng));
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    )..forward().whenComplete(widget.onDone);
+    _playDing();
+  }
+
+  Future<void> _playDing() async {
+    try {
+      _audio = AudioPlayer();
+      await _audio!.play(BytesSource(_makeCoinWav()));
+    } catch (_) {
+      // Audio unavailable — silently skip
+    }
+  }
+
+  @override
+  void dispose() {
+    _audio?.dispose();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, __) => CustomPaint(
+          size: size,
+          painter: _CoinPainter(_particles, _ctrl.value, size),
+        ),
+      ),
     );
   }
 }
+
+class _CoinParticle {
+  _CoinParticle(math.Random rng)
+      : startX      = rng.nextDouble(),
+        delay       = rng.nextDouble() * 0.35,
+        radius      = 8 + rng.nextDouble() * 7,
+        swayFactor  = (rng.nextDouble() - 0.5) * 0.4,
+        brightness  = 0.75 + rng.nextDouble() * 0.25,
+        isStar      = rng.nextDouble() < 0.2;
+
+  final double startX;
+  final double delay;
+  final double radius;
+  final double swayFactor;
+  final double brightness;
+  final bool isStar;
+}
+
+class _CoinPainter extends CustomPainter {
+  _CoinPainter(this.particles, this.progress, this.screenSize);
+
+  final List<_CoinParticle> particles;
+  final double progress;
+  final Size screenSize;
+
+  // Quadratic Bezier interpolation
+  double _qBez(double a, double b, double c, double t) {
+    final ab = a + (b - a) * t;
+    final bc = b + (c - b) * t;
+    return ab + (bc - ab) * t;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final walletX = size.width * 0.5;
+    final walletY = size.height * 0.68;
+
+    // Draw wallet glow when coins start arriving
+    if (progress > 0.45) {
+      final glowT = ((progress - 0.45) / 0.3).clamp(0.0, 1.0);
+      final pulseT = math.sin(progress * math.pi * 6) * 0.15 + 0.85;
+      _drawWalletGlow(canvas, Offset(walletX, walletY), glowT * pulseT);
+    }
+
+    for (final p in particles) {
+      final t = ((progress - p.delay) / (1.0 - p.delay)).clamp(0.0, 1.0);
+      if (t <= 0) continue;
+
+      final sx = p.startX * size.width;
+      // Arc: control point bows outward for a natural arc
+      final cx = sx + p.swayFactor * size.width;
+      final cy = size.height * 0.15;
+
+      final x = _qBez(sx, cx, walletX, t);
+      final y = _qBez(-24, cy, walletY, t);
+
+      // Fade out near wallet
+      final alpha = t < 0.75 ? 1.0 : (1.0 - t) / 0.25;
+      final scale = 0.4 + t * 0.6;
+
+      if (p.isStar) {
+        _drawStar(canvas, Offset(x, y), p.radius * scale * 0.7, alpha, p.brightness);
+      } else {
+        _drawCoin(canvas, Offset(x, y), p.radius * scale, alpha, p.brightness);
+      }
+    }
+
+    // Draw wallet icon
+    if (progress > 0.4) {
+      final walletAlpha = ((progress - 0.4) / 0.2).clamp(0.0, 1.0);
+      final fadeOut   = progress > 0.85 ? (1.0 - progress) / 0.15 : 1.0;
+      _drawWallet(canvas, Offset(walletX, walletY), walletAlpha * fadeOut);
+    }
+  }
+
+  void _drawCoin(Canvas canvas, Offset c, double r, double alpha, double bright) {
+    // Gold fill
+    final fill = Paint()
+      ..color = Color.fromARGB(
+        (alpha * 255).toInt(),
+        (255 * bright).toInt(),
+        (190 * bright).toInt(),
+        0,
+      )
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(c, r, fill);
+
+    // Highlight
+    final hi = Paint()
+      ..color = Colors.white.withOpacity(alpha * 0.55)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(c - Offset(r * 0.28, r * 0.28), r * 0.32, hi);
+
+    // Border
+    final border = Paint()
+      ..color = Color.fromARGB((alpha * 180).toInt(), 200, 140, 0)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    canvas.drawCircle(c, r, border);
+  }
+
+  void _drawStar(Canvas canvas, Offset c, double r, double alpha, double bright) {
+    final paint = Paint()
+      ..color = Color.fromARGB(
+        (alpha * 230).toInt(),
+        255,
+        (220 * bright).toInt(),
+        (50 * bright).toInt(),
+      )
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    for (int i = 0; i < 5; i++) {
+      final outer = Offset(
+        c.dx + r * math.cos((i * 4 * math.pi / 5) - math.pi / 2),
+        c.dy + r * math.sin((i * 4 * math.pi / 5) - math.pi / 2),
+      );
+      final inner = Offset(
+        c.dx + (r * 0.45) * math.cos(((i * 4 + 2) * math.pi / 5) - math.pi / 2),
+        c.dy + (r * 0.45) * math.sin(((i * 4 + 2) * math.pi / 5) - math.pi / 2),
+      );
+      if (i == 0) path.moveTo(outer.dx, outer.dy);
+      else path.lineTo(outer.dx, outer.dy);
+      path.lineTo(inner.dx, inner.dy);
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawWalletGlow(Canvas canvas, Offset c, double intensity) {
+    final glow = Paint()
+      ..color = AppColors.success.withOpacity(intensity * 0.35)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 28);
+    canvas.drawCircle(c, 45, glow);
+  }
+
+  void _drawWallet(Canvas canvas, Offset c, double alpha) {
+    final a = (alpha * 255).toInt();
+
+    // Wallet body
+    final body = Paint()
+      ..color = Color.fromARGB(a, 39, 174, 96)
+      ..style = PaintingStyle.fill;
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: c, width: 54, height: 38),
+      const Radius.circular(9),
+    );
+    canvas.drawRRect(rrect, body);
+
+    // Wallet card pocket
+    final pocket = Paint()
+      ..color = Color.fromARGB((a * 0.45).toInt(), 255, 255, 255)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: c + const Offset(10, 0), width: 22, height: 16),
+        const Radius.circular(4),
+      ),
+      pocket,
+    );
+
+    // Coin slot line
+    final slot = Paint()
+      ..color = Color.fromARGB((a * 0.6).toInt(), 255, 255, 255)
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(c + const Offset(-18, -4), c + const Offset(-4, -4), slot);
+    canvas.drawLine(c + const Offset(-18,  4), c + const Offset(-4,  4), slot);
+
+    // Green glow border
+    final border = Paint()
+      ..color = Color.fromARGB((a * 0.6).toInt(), 100, 220, 130)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawRRect(rrect, border);
+  }
+
+  @override
+  bool shouldRepaint(_CoinPainter old) => old.progress != progress;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _Timeline extends StatelessWidget {
   const _Timeline({required this.steps});
