@@ -112,10 +112,12 @@ class EmailScannerService {
             ? DateTime.fromMillisecondsSinceEpoch(dateMs)
             : DateTime.now();
 
+        final senderAddr = _extractSender(detail);
         final item = _detector.parseRefund(
           id: 'email_$id',
           sourceText: body,
-          sender: _extractSender(detail),
+          sender: senderAddr,
+          senderAddress: senderAddr, // raw email address for deep-link
           source: RefundSource.email,
           date: date,
         );

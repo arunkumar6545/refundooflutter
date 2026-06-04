@@ -5,6 +5,7 @@ import '../../features/permissions/sync_permissions_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/add_refund/add_refund_screen.dart';
 import '../../features/refund_detail/refund_detail_screen.dart';
+import '../../features/reports/reports_screen.dart';
 import '../../features/splash/splash_screen.dart';
 import '../../features/login/login_screen.dart';
 import '../../services/auth_service.dart';
@@ -49,6 +50,10 @@ GoRouter createAppRouter() {
       GoRoute(
         path: '/profile',
         builder: (_, __) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: '/reports',
+        builder: (_, __) => const ReportsScreen(),
       ),
       GoRoute(
         path: '/refund/:id',

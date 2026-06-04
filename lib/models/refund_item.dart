@@ -65,6 +65,7 @@ class RefundItem {
     this.bankName,
     this.refundDestination = RefundDestination.unknown,
     this.refundIssuer,
+    this.senderAddress,
   });
 
   final String id;
@@ -93,6 +94,9 @@ class RefundItem {
   final RefundDestination refundDestination;
   /// Company that issued the refund (e.g. "Amazon", "Zomato").
   final String? refundIssuer;
+  /// Raw sender address: phone number / short code for SMS, email for email.
+  /// Used to deep-link back to the original message thread.
+  final String? senderAddress;
 
   /// Formatted amount string, e.g. "₹499.00" or "$34.99"
   String get formattedAmount => '$currency${amount.toStringAsFixed(2)}';
@@ -133,6 +137,7 @@ class RefundItem {
     String? bankName,
     RefundDestination? refundDestination,
     String? refundIssuer,
+    String? senderAddress,
   }) {
     return RefundItem(
       id: id ?? this.id,
@@ -153,6 +158,7 @@ class RefundItem {
       bankName: bankName ?? this.bankName,
       refundDestination: refundDestination ?? this.refundDestination,
       refundIssuer: refundIssuer ?? this.refundIssuer,
+      senderAddress: senderAddress ?? this.senderAddress,
     );
   }
 
@@ -231,6 +237,7 @@ class RefundItem {
       'bankName': bankName,
       'refundDestination': refundDestination.name,
       'refundIssuer': refundIssuer,
+      'senderAddress': senderAddress,
     };
   }
 
@@ -262,6 +269,7 @@ class RefundItem {
           ? RefundDestination.values.byName(json['refundDestination'] as String)
           : RefundDestination.unknown,
       refundIssuer: json['refundIssuer'] as String?,
+      senderAddress: json['senderAddress'] as String?,
     );
   }
 }

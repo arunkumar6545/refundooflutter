@@ -39,6 +39,7 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
         snippet: refund.rawSnippet?.isNotEmpty == true
             ? refund.rawSnippet!
             : 'Refund of ${refund.formattedAmount} detected from $issuer.',
+        senderAddress: refund.senderAddress,
       ),
 
       // Step 2 — merchant confirmed (complete when we have the data)
@@ -1200,6 +1201,7 @@ class _MerchantContactCard extends StatelessWidget {
     );
   }
 }
+
 
 class _DetailRow extends StatelessWidget {
   const _DetailRow({

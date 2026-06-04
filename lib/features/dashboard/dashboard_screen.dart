@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_logo.dart';
+import '../../core/widgets/app_drawer.dart';
 import '../../models/refund_item.dart';
 import '../../services/refund_storage_service.dart';
 import '../../services/sms_scanner_service.dart';
@@ -87,6 +88,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final SmsScannerService _smsScanner = SmsScannerService();
   final EmailScannerService _emailScanner = EmailScannerService();
   final AuthService _auth = AuthService();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   List<RefundItem> _refunds = [];
   bool _loading = true;
@@ -295,6 +297,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: const AppDrawer(currentRoute: '/dashboard'),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -417,18 +421,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildAppBar(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
         children: [
+          // Hamburger → opens side drawer
           IconButton(
-            icon: const Icon(Icons.account_circle_outlined, size: 32),
-            onPressed: () => context.push('/profile'),
+            icon: const Icon(Icons.menu_rounded, size: 28),
+            tooltip: 'Menu',
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
           ),
+          // App logo + name (centred)
           Expanded(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const AppLogo(size: 28, borderRadius: 8, showGlow: false),
+                const AppLogo(size: 26, borderRadius: 8, showGlow: false),
                 const SizedBox(width: 8),
                 Text(
                   'Refundoo',
@@ -440,13 +447,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ],
             ),
           ),
+          // Add refund
           IconButton(
             icon: const Icon(Icons.add_circle_outline, size: 28),
+            tooltip: 'Add refund',
             onPressed: () => context.push('/add-refund'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined, size: 28),
-            onPressed: () {},
           ),
         ],
       ),
@@ -763,18 +768,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildBottomBar(BuildContext context) {
     return BottomAppBar(
-      height: 80,
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      height: 72,
+      padding: const EdgeInsets.symmetric(vertical: 8),
       color: Theme.of(context).scaffoldBackgroundColor,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _NavItem(icon: Icons.grid_view_outlined, onTap: () {}),
-          _NavItem(icon: Icons.receipt_long_outlined, onTap: () {}),
           _NavItem(
-            icon: Icons.person_outline,
+            icon: Icons.grid_view_outlined,
+            label: 'Home',
             active: true,
-            onTap: () => context.push('/profile'),
+            onTap: () {},
+          ),
+          _NavItem(
+            icon: Icons.receipt_long_outlined,
+            label: 'Refunds',
+            onTap: () {},
+          ),
+          _NavItem(
+            icon: Icons.bar_chart_rounded,
+            label: 'Reports',
+            onTap: () => context.push('/reports'),
           ),
         ],
       ),
@@ -1216,35 +1230,43 @@ class _StatusBadge extends StatelessWidget {
 }
 
 class _NavItem extends StatelessWidget {
-  const _NavItem({required this.icon, required this.onTap, this.active = false});
+  const _NavItem({
+    required this.icon,
+    required this.onTap,
+    this.label = '',
+    this.active = false,
+  });
 
   final IconData icon;
   final VoidCallback onTap;
+  final String label;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: onTap,
-      icon: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 28,
-            color: active ? AppColors.primary : AppColors.textMuted,
-          ),
-          if (active) const SizedBox(height: 4),
-          if (active)
-            Container(
-              width: 4,
-              height: 4,
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
+    final color = active ? AppColors.primary : AppColors.textMuted;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 26, color: color),
+            if (label.isNotEmpty) ...[
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  color: color,
+                ),
               ),
-            ),
-        ],
+            ],
+          ],
+        ),
       ),
     );
   }

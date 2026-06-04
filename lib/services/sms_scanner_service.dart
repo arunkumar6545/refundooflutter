@@ -46,6 +46,7 @@ class SmsScannerService {
           id: id,
           sourceText: body,
           sender: sender,
+          senderAddress: msg.address, // raw phone / short-code for deep-link
           source: RefundSource.sms,
           date: date,
         );

@@ -236,10 +236,14 @@ class RefundDetectionService {
   }
 
   /// Builds a RefundItem from raw message content (SMS or email body).
+  /// [sender] is the display name / cleaned address.
+  /// [senderAddress] is the raw address (phone number, short code, or email)
+  /// used to deep-link back to the original message thread.
   RefundItem? parseRefund({
     required String id,
     required String sourceText,
     String? sender,
+    String? senderAddress,
     required RefundSource source,
     DateTime? date,
   }) {
@@ -267,6 +271,7 @@ class RefundDetectionService {
       bankName: bankName,
       refundDestination: destination,
       refundIssuer: issuer,
+      senderAddress: senderAddress ?? sender,
     );
   }
 }

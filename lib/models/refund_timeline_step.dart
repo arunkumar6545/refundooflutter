@@ -10,6 +10,7 @@ class RefundTimelineStep {
     this.isCurrent = false,
     this.isSkipped = false,
     this.isManualClose = false,
+    this.senderAddress,
   });
 
   final String title;
@@ -22,4 +23,7 @@ class RefundTimelineStep {
   final bool isSkipped;
   /// True for the "Manually Closed" terminal step.
   final bool isManualClose;
+  /// Raw sender address (phone / short-code for SMS, email for email).
+  /// Only set on the "Message Parsed" step to allow deep-linking.
+  final String? senderAddress;
 }
