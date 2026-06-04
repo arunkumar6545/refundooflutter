@@ -52,7 +52,93 @@ If you don’t have Flutter yet:
 
 **Build and restart every time after a change.** Stop the app (e.g. press `q` in the terminal), then run again (`flutter run` or **RUN_REFUNDOO.bat**) so changes are reflected.
 
-## Building for Android and iOS
+## Build Artifacts & APK Paths
+
+### Latest ready-to-install release
+
+The latest signed release APK is always committed to:
+
+```
+releases/app-release.apk          ← arm64-v8a  (~22 MB, for most modern phones)
+```
+
+Download it directly from GitHub → **releases/** folder → click the file → **Download raw file**.
+
+---
+
+### Where Flutter puts APKs after a local build
+
+| Build command | Output path (relative to project root) |
+|---|---|
+| `flutter build apk --debug` | `build\app\outputs\flutter-apk\app-debug.apk` |
+| `flutter build apk --release` (fat) | `build\app\outputs\flutter-apk\app-release.apk` |
+| `flutter build apk --release --split-per-abi` | `build\app\outputs\flutter-apk\app-armeabi-v7a-release.apk` |
+| | `build\app\outputs\flutter-apk\app-arm64-v8a-release.apk` ← **recommended** |
+| | `build\app\outputs\flutter-apk\app-x86_64-release.apk` |
+| `flutter build appbundle --release` | `build\app\outputs\bundle\release\app-release.aab` |
+| `flutter build ipa` (macOS only) | `build\ios\ipa\Refundoo.ipa` |
+
+> **Which APK to use?** Almost all phones sold since 2016 are `arm64-v8a`. Use the split APK for side-loading; use the App Bundle (AAB) for Google Play.
+
+---
+
+### Build & install locally (Android over USB / Wi-Fi ADB)
+
+```powershell
+# 1. Build signed release split APKs
+flutter build apk --release --split-per-abi
+
+# 2. Copy the arm64 slice to releases/ (tracked by Git)
+Copy-Item "build\app\outputs\flutter-apk\app-arm64-v8a-release.apk" "releases\app-release.apk" -Force
+
+# 3a. Install over USB
+adb install -r "releases\app-release.apk"
+
+# 3b. Install over Wi-Fi ADB (replace IP:PORT with your device)
+adb connect 192.168.x.x:38267
+adb -s 192.168.x.x:38267 install -r "releases\app-release.apk"
+```
+
+> If install fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (signing key changed), uninstall first:
+> ```powershell
+> adb uninstall com.refundoo.refundoo
+> adb install "releases\app-release.apk"
+> ```
+
+---
+
+### Android signing (release builds)
+
+| File | Purpose |
+|---|---|
+| `android/key.properties` | Points Gradle to the keystore (**gitignored** – local only) |
+| `android/app/refundoo-release.keystore` | Self-signed keystore (**gitignored** – local only) |
+| `android/app/build.gradle` | Reads `key.properties` for the `release` signing config |
+
+To regenerate the keystore on a new machine:
+```powershell
+keytool -genkey -v -keystore android\app\refundoo-release.keystore `
+  -alias refundoo -keyalg RSA -keysize 2048 -validity 10000
+```
+Then create `android/key.properties`:
+```
+storePassword=<your_password>
+keyPassword=<your_password>
+keyAlias=refundoo
+storeFile=refundoo-release.keystore
+```
+
+---
+
+### CI / CD (Codemagic)
+
+Automated builds are defined in `codemagic.yaml`. Each workflow produces artifacts downloadable from the Codemagic dashboard:
+
+| Workflow | Artifact |
+|---|---|
+| `android-release` | `app-arm64-v8a-release.apk` + other ABI slices |
+| `android-debug-fat` | `app-debug.apk` (fat, all ABIs) |
+| `ios-unsigned` | `Refundoo.ipa` (no code-sign, sideload via Sideloadly) |
 
 See **[BUILD_ANDROID_IOS.md](BUILD_ANDROID_IOS.md)** for the full step-by-step list to run and generate Android and iOS apps (including licenses, emulator, APK, App Bundle, and iOS on Mac).
 
@@ -91,18 +177,34 @@ To **publish the Android app to Google Play Store**, see **[PUBLISH_GOOGLE_PLAY.
 
 ```
 lib/
-  app/                 # App widget, theme
+  app/                   # App widget, MaterialApp.router
   core/
-    router/            # go_router routes
-    theme/             # AppColors, AppTheme
+    router/              # go_router routes (app_router.dart)
+    theme/               # AppColors, AppTheme, responsive.dart (breakpoints)
+    widgets/             # AppLogo (CustomPainter), AppDrawer
   features/
-    dashboard/         # Main dashboard (bento cards, recent activity)
-    permissions/       # Sync Permissions (SMS/Email toggles)
-    profile/          # Profile (persona, security, integrations)
-    refund_detail/    # Refund progress tree
-    splash/           # Splash → permissions or dashboard
-  models/             # RefundItem, RefundCategory, RefundTimelineStep
-  services/           # RefundDetectionService, SmsScannerService, EmailSyncService
+    add_refund/          # Manual add-refund form
+    dashboard/           # Main dashboard (bento cards, categories, activity list)
+    login/               # Google Sign-In / guest login
+    permissions/         # Sync Permissions (SMS + multi-account email)
+    profile/             # Profile, settings, integrations
+    refund_detail/       # Per-refund progress timeline + coin animation
+    reports/             # Charts & analytics screen
+    splash/              # Splash with launch-sync radar animation
+  models/                # RefundItem, RefundCategory, RefundTimelineStep
+  services/              # SmsScannerService, EmailScannerService,
+                         # RefundDetectionService, RefundStorageService, AuthService
+
+android/
+  app/src/main/res/      # Launcher icons (all mipmap densities)
+  app/src/main/res/_gen_icons.py   # Regenerate icons: python _gen_icons.py
+  key.properties         # (gitignored) signing config
+  app/refundoo-release.keystore    # (gitignored) release keystore
+
+releases/
+  app-release.apk        # Latest arm64 release APK (tracked by Git)
+
+codemagic.yaml           # CI/CD: android-release, ios-unsigned workflows
 ```
 
 ## SMS permission
@@ -119,4 +221,7 @@ lib/
 
 ---
 
-**Version**: 1.0.0
+**Version**: 1.0.0  
+**Package**: `com.refundoo.refundoo`  
+**Min SDK**: 21 (Android 5.0) · **Target SDK**: 34  
+**Flutter**: ≥ 3.0.0
