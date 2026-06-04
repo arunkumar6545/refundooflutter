@@ -1,0 +1,121 @@
+workflows:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Android – debug APK (no signing needed)
+  # ─────────────────────────────────────────────────────────────────────────────
+  android-debug:
+    name: Android Debug APK
+    max_build_duration: 30
+    environment:
+      flutter: stable
+    scripts:
+      - name: Get packages
+        script: flutter pub get
+      - name: Build debug APK
+        script: flutter build apk --debug
+    artifacts:
+      - build/app/outputs/flutter-apk/app-debug.apk
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # iOS – unsigned build (no Apple Developer account required)
+  #   Produces an IPA you can install via AltStore / Sideloadly on any device,
+  #   or open in the iOS Simulator. Perfect for testing before paying for a
+  #   developer account.
+  # ─────────────────────────────────────────────────────────────────────────────
+  ios-unsigned:
+    name: iOS Unsigned IPA
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Scaffold iOS Xcode project
+        script: |
+          # flutter create --platforms=ios only adds missing iOS files;
+          # it does NOT touch lib/ or any Dart code.
+          flutter create --platforms=ios --org com.refundoo --project-name refundoo .
+
+      - name: Restore custom Info.plist values
+        script: |
+          PLIST=ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Refundoo"        "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName Refundoo"               "$PLIST"
+          # Portrait-only
+          /usr/libexec/PlistBuddy -c "Set :UISupportedInterfaceOrientations:0 UIInterfaceOrientationPortrait" "$PLIST" 2>/dev/null || true
+          # Required by flutter_secure_storage when biometrics are available
+          /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 'Used to protect your refund data'" "$PLIST" 2>/dev/null || true
+
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Install CocoaPods
+        script: cd ios && pod install
+
+      - name: Build unsigned IPA
+        script: flutter build ipa --no-codesign --release
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # iOS – signed build for TestFlight / App Store
+  #   Prerequisites (one-time setup in Codemagic dashboard):
+  #     1. Apple Developer account ($99/yr)
+  #     2. Add an App Store Connect API key in Codemagic → Integrations
+  #     3. Register bundle ID "com.refundoo.app" in developer.apple.com
+  #     4. Create an App in App Store Connect with the same bundle ID
+  #
+  #   Once those are done, trigger this workflow and Codemagic will handle
+  #   certificate + provisioning profile automatically.
+  # ─────────────────────────────────────────────────────────────────────────────
+  ios-testflight:
+    name: iOS TestFlight Release
+    max_build_duration: 120
+    integrations:
+      app_store_connect: codemagic          # name of the key set in Codemagic dashboard
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.refundoo.app
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Scaffold iOS Xcode project
+        script: |
+          flutter create --platforms=ios --org com.refundoo --project-name refundoo .
+
+      - name: Set bundle identifier
+        script: |
+          BUNDLE_ID="com.refundoo.app"
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" \
+            ios/Runner.xcodeproj/project.pbxproj
+
+      - name: Restore custom Info.plist values
+        script: |
+          PLIST=ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Refundoo"        "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName Refundoo"               "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 'Used to protect your refund data'" "$PLIST" 2>/dev/null || true
+
+      - name: Get Flutter packages
+        script: flutter pub get
+
+      - name: Install CocoaPods
+        script: cd ios && pod install
+
+      - name: Build signed IPA
+        script: flutter build ipa --release
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - External Testers
