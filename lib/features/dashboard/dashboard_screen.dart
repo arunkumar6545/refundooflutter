@@ -89,7 +89,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final SmsScannerService _smsScanner = SmsScannerService();
   final EmailScannerService _emailScanner = EmailScannerService();
   final AuthService _auth = AuthService();
-  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _scaffoldKey       = GlobalKey<ScaffoldState>();
+  final _recentActivityKey = GlobalKey();
+  late final ScrollController _scrollCtrl;
 
   List<RefundItem> _refunds = [];
   bool _loading = true;
@@ -235,7 +237,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+    _scrollCtrl = ScrollController();
     _loadRefunds();
+  }
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  void _scrollToRecentActivity() {
+    final ctx = _recentActivityKey.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      alignment: 0.0,          // top of the viewport
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+    );
   }
 
   Future<void> _loadRefunds({bool showLoader = true}) async {
@@ -333,6 +353,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   return Stack(
                     children: [
                       CustomScrollView(
+                        controller: _scrollCtrl,
                         slivers: [
                           SliverToBoxAdapter(child: _buildAppBar(context, tablet)),
                           SliverToBoxAdapter(child: _buildHeadline(context)),
@@ -341,7 +362,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               child: _buildSectionHeader(context, 'Refund Categories', 'View all')),
                           SliverToBoxAdapter(child: _buildCategoriesGrid(context, constraints.maxWidth)),
                           SliverToBoxAdapter(
-                              child: _buildSectionHeader(context, 'Recent Activity', '')),
+                              child: KeyedSubtree(
+                                key: _recentActivityKey,
+                                child: _buildSectionHeader(context, 'Recent Activity', ''),
+                              )),
                           if (_hasActiveFilter)
                             SliverToBoxAdapter(child: _buildClearFilterBar(context)),
                           SliverPersistentHeader(
@@ -939,7 +963,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _NavItem(
             icon: Icons.receipt_long_outlined,
             label: 'Refunds',
-            onTap: () {},
+            onTap: _scrollToRecentActivity,
           ),
           _NavItem(
             icon: Icons.bar_chart_rounded,
