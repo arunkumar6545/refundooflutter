@@ -14,23 +14,29 @@ workflows:
       - name: Get packages
         script: flutter pub get
 
-      - name: Generate debug keystore for signing
+      - name: Generate keystore and key.properties
         script: |
-          # Creates a self-signed keystore so the release APK can be installed
-          # on any Android device without Play Store.
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore "$HOME/.android/debug.keystore" \
-              -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass android -keypass android \
-              -dname "CN=Android Debug,O=Android,C=US"
-          fi
+          KEYSTORE="$HOME/refundoo-release.keystore"
+
+          # Generate a self-signed keystore (valid 10000 days)
+          keytool -genkeypair -v \
+            -keystore "$KEYSTORE" \
+            -alias refundookey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass refundoo123 -keypass refundoo123 \
+            -dname "CN=Refundoo,O=Refundoo,C=IN"
+
+          # Write key.properties so build.gradle can find the keystore
+          cat > android/key.properties <<EOF
+          storePassword=refundoo123
+          keyPassword=refundoo123
+          keyAlias=refundookey
+          storeFile=$KEYSTORE
+          EOF
 
       - name: Build release split APKs
         script: |
-          flutter build apk --release --split-per-abi \
-            --dart-define=FLUTTER_SUPPRESS_ANALYTICS=true
+          flutter build apk --release --split-per-abi
 
     artifacts:
       # arm64-v8a  = all modern phones (use this one)
