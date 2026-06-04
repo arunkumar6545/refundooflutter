@@ -90,6 +90,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   _DashboardFilterKind _filterKind = _DashboardFilterKind.all;
   RefundCategory? _filterCategory;
   String _chipFilter = 'All'; // for the existing status chips: All, Processing, Completed, Action Needed
+  Offset? _fabOffset; // null until first layout; then user can drag it
 
   double get _pendingAmount {
     final pending = _refunds.where((r) => r.status != RefundStatus.completed);
@@ -279,101 +280,122 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: _buildAppBar(context),
-            ),
-            SliverToBoxAdapter(
-              child: _buildHeadline(context),
-            ),
-            SliverToBoxAdapter(
-              child: _buildStatsRow(context),
-            ),
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(context, 'Refund Categories', 'View all'),
-            ),
-            SliverToBoxAdapter(
-              child: _buildCategoriesGrid(context),
-            ),
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(context, 'Recent Activity', ''),
-            ),
-            if (_hasActiveFilter)
-              SliverToBoxAdapter(
-                child: _buildClearFilterBar(context),
-              ),
-            SliverToBoxAdapter(
-              child: _buildFilterChips(context),
-            ),
-            if (_loading)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Pin to bottom-right on first layout
+            _fabOffset ??= Offset(
+              constraints.maxWidth - 72,
+              constraints.maxHeight - 80,
+            );
+            return Stack(
+              children: [
+                CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(child: _buildAppBar(context)),
+                    SliverToBoxAdapter(child: _buildHeadline(context)),
+                    SliverToBoxAdapter(child: _buildStatsRow(context)),
+                    SliverToBoxAdapter(
+                        child: _buildSectionHeader(context, 'Refund Categories', 'View all')),
+                    SliverToBoxAdapter(child: _buildCategoriesGrid(context)),
+                    SliverToBoxAdapter(
+                        child: _buildSectionHeader(context, 'Recent Activity', '')),
+                    if (_hasActiveFilter)
+                      SliverToBoxAdapter(child: _buildClearFilterBar(context)),
+                    SliverToBoxAdapter(child: _buildFilterChips(context)),
+                    if (_loading)
+                      const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Center(
+                              child: CircularProgressIndicator(color: AppColors.primary)),
+                        ),
+                      )
+                    else if (_filteredRefunds.isEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24, vertical: 48),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.receipt_long_outlined,
+                                size: 64,
+                                color: AppColors.textMuted.withValues(alpha: 0.4),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _refunds.isEmpty
+                                    ? 'No refunds tracked yet'
+                                    : 'No results',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(color: AppColors.textMuted),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _refunds.isEmpty
+                                    ? 'Tap + to add one manually or use sync to scan SMS'
+                                    : 'Try a different filter',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                        color: AppColors.textMuted
+                                            .withValues(alpha: 0.7)),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (_, i) {
+                            final item = _filteredRefunds[i];
+                            return _ActivityTile(
+                              item: item,
+                              onTap: () async {
+                                await context.push('/refund/${item.id}');
+                                if (mounted) _loadRefunds(showLoader: false);
+                              },
+                            );
+                          },
+                          childCount: _filteredRefunds.length,
+                        ),
+                      ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                  ],
                 ),
-              )
-            else if (_filteredRefunds.isEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.receipt_long_outlined,
-                        size: 64,
-                        color: AppColors.textMuted.withValues(alpha: 0.4),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _refunds.isEmpty ? 'No refunds tracked yet' : 'No results',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: AppColors.textMuted,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _refunds.isEmpty
-                            ? 'Tap + to add one manually or use Quick Sync to scan SMS'
-                            : 'Try a different filter',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textMuted.withValues(alpha: 0.7),
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+
+                // ── Draggable sync FAB ──────────────────────────────────
+                Positioned(
+                  left: _fabOffset!.dx,
+                  top: _fabOffset!.dy,
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      setState(() {
+                        _fabOffset = Offset(
+                          (_fabOffset!.dx + details.delta.dx)
+                              .clamp(0.0, constraints.maxWidth - 56),
+                          (_fabOffset!.dy + details.delta.dy)
+                              .clamp(0.0, constraints.maxHeight - 56),
+                        );
+                      });
+                    },
+                    child: _SyncFab(
+                      onPressed: _syncing ? null : _quickSync,
+                      syncing: _syncing,
+                    ),
                   ),
                 ),
-              )
-            else
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (_, i) {
-                    final item = _filteredRefunds[i];
-                    return _ActivityTile(
-                      item: item,
-                      onTap: () async {
-                        await context.push('/refund/${item.id}');
-                        if (mounted) _loadRefunds(showLoader: false);
-                      },
-                    );
-                  },
-                  childCount: _filteredRefunds.length,
-                ),
-              ),
-            const SliverToBoxAdapter(child: SizedBox(height: 100)),
-          ],
+              ],
+            );
+          },
         ),
       ),
       bottomNavigationBar: _buildBottomBar(context),
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 24),
-        child: _QuickSyncButton(
-          onPressed: _syncing ? null : _quickSync,
-          syncing: _syncing,
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
@@ -1151,28 +1173,37 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-class _QuickSyncButton extends StatelessWidget {
-  const _QuickSyncButton({required this.onPressed, this.syncing = false});
+class _SyncFab extends StatelessWidget {
+  const _SyncFab({required this.onPressed, this.syncing = false});
 
   final VoidCallback? onPressed;
   final bool syncing;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 64,
-      child: FilledButton.icon(
-        onPressed: onPressed,
-        icon: syncing
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-              )
-            : const Icon(Icons.sync, size: 22),
-        label: Text(syncing ? 'Syncing...' : 'Quick Sync'),
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
+    return Material(
+      color: syncing
+          ? AppColors.primary.withValues(alpha: 0.75)
+          : AppColors.primary,
+      shape: const CircleBorder(),
+      elevation: 6,
+      shadowColor: AppColors.primary.withValues(alpha: 0.45),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onPressed,
+        child: SizedBox(
+          width: 52,
+          height: 52,
+          child: Center(
+            child: syncing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.5, color: Colors.white),
+                  )
+                : const Icon(Icons.sync, color: Colors.white, size: 22),
+          ),
         ),
       ),
     );
