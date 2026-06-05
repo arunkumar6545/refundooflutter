@@ -145,8 +145,25 @@ class RefundItem {
     return DateTime.now().difference(since).inDays;
   }
 
-  /// Threshold: estimatedDays from the message, or 7 if not detected.
-  int get expectedDays => estimatedDays ?? 7;
+  /// Category-based SLA defaults (days until refund should arrive).
+  static const _categorySla = {
+    RefundCategory.travel:        14,
+    RefundCategory.retail:        7,
+    RefundCategory.services:      10,
+    RefundCategory.foodDining:    5,
+    RefundCategory.electronics:   10,
+    RefundCategory.entertainment: 7,
+  };
+
+  /// Threshold: parsed from message → category SLA → generic 7-day fallback.
+  int get expectedDays => estimatedDays ?? _categorySla[category] ?? 7;
+
+  /// The date by which the refund should have arrived.
+  DateTime? get expectedByDate {
+    final since = detectedAt ?? refundIssuedAt;
+    if (since == null) return null;
+    return since.add(Duration(days: expectedDays));
+  }
 
   /// True when a non-completed refund has been waiting longer than expected.
   bool get isOverdue =>

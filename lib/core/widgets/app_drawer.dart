@@ -124,6 +124,13 @@ class _AppDrawerState extends State<AppDrawer> {
                   active: widget.currentRoute == '/add-refund',
                   onTap: () => _go(context, '/add-refund'),
                 ),
+                _DrawerItem(
+                  icon: Icons.archive_outlined,
+                  label: 'Archive',
+                  active: widget.currentRoute == '/archive',
+                  sublabel: 'Completed refunds',
+                  onTap: () => _go(context, '/archive'),
+                ),
 
                 const SizedBox(height: 6),
                 const Divider(height: 1, indent: 8, endIndent: 8),

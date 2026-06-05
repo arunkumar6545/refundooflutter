@@ -6,6 +6,7 @@ import '../../core/widgets/app_logo.dart';
 import '../../services/auth_service.dart';
 import '../../services/email_scanner_service.dart';
 import '../../main.dart' show themeModeNotifier;
+import '../../services/notification_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -24,6 +25,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _emailSyncEnabled = false;
   String? _approvedEmailAccount;
   bool _isGuest = false;
+  bool _notificationsEnabled = true;
 
   @override
   void initState() {
@@ -56,6 +58,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _smsEnabled = prefs.getBool('sms_enabled') ?? false;
         _emailSyncEnabled = emailEnabled;
         _approvedEmailAccount = approvedEmail;
+        _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
       });
     }
   }
@@ -110,6 +113,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 32),
             _buildSyncSection(context),
+            const SizedBox(height: 24),
+            _buildNotificationsSection(context),
             const SizedBox(height: 24),
             _buildAppearanceSection(context),
             const SizedBox(height: 24),
@@ -232,6 +237,72 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : null,
         ),
       ],
+    );
+  }
+
+  Widget _buildNotificationsSection(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: (_notificationsEnabled ? AppColors.primary : AppColors.textMuted)
+              .withValues(alpha: 0.2),
+          width: 1.5,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: (_notificationsEnabled ? AppColors.primary : AppColors.textMuted)
+                  .withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.notifications_outlined,
+              color: _notificationsEnabled ? AppColors.primary : AppColors.textMuted,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Overdue Alerts',
+                    style: Theme.of(context).textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(
+                  _notificationsEnabled
+                      ? 'Daily reminder + overdue alerts'
+                      : 'Notifications disabled',
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: AppColors.textMuted),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: _notificationsEnabled,
+            activeColor: AppColors.primary,
+            onChanged: (val) async {
+              setState(() => _notificationsEnabled = val);
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setBool('notifications_enabled', val);
+              if (val) {
+                await NotificationService.scheduleDailyReminder();
+              } else {
+                await NotificationService.cancelAll();
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 

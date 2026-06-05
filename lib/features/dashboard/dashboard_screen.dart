@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -13,7 +14,8 @@ import '../../services/refund_storage_service.dart';
 import '../../services/sms_scanner_service.dart';
 import '../../services/email_scanner_service.dart';
 import '../../services/auth_service.dart';
-import '../profile/profile_screen.dart';
+import '../../services/notification_service.dart';
+import '../../services/widget_service.dart';
 
 /// Gradient backgrounds per category — no network dependency.
 const _categoryGradients = {
@@ -72,6 +74,12 @@ IconData _activityIconFor(RefundCategory? category) {
     default:
       return Icons.receipt_long_outlined;
   }
+}
+
+String _fmtDate(DateTime d) {
+  const months = ['Jan','Feb','Mar','Apr','May','Jun',
+                  'Jul','Aug','Sep','Oct','Nov','Dec'];
+  return '${months[d.month - 1]} ${d.day}';
 }
 
 class DashboardScreen extends StatefulWidget {
@@ -391,6 +399,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     });
     _entranceCtrl.forward(from: 0);
     _countCtrl.forward(from: 0);
+    unawaited(NotificationService.scheduleOverdueReminder(_refunds));
+    unawaited(WidgetService.update(_refunds));
   }
 
   Future<void> _quickSync() async {
@@ -1595,6 +1605,24 @@ class _ActivityTileState extends State<_ActivityTile> {
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                   color: Color(0xFFB91C1C),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else if (item.status != RefundStatus.completed &&
+                            item.expectedByDate != null) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.schedule_outlined,
+                                  size: 11, color: AppColors.textMuted),
+                              const SizedBox(width: 3),
+                              Text(
+                                'Expected by ${_fmtDate(item.expectedByDate!)}',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textMuted,
                                 ),
                               ),
                             ],
