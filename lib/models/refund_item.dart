@@ -1,5 +1,39 @@
 import 'package:flutter/material.dart' show Color;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-refund user note (text + optional local image path)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class RefundNote {
+  const RefundNote({
+    required this.id,
+    required this.text,
+    required this.createdAt,
+    this.imagePath,
+  });
+
+  /// Unique id — uses createdAt epoch millis as a simple unique string.
+  final String id;
+  final String text;
+  final DateTime createdAt;
+  /// Absolute path to a locally stored image, or null if text-only.
+  final String? imagePath;
+
+  Map<String, dynamic> toJson() => {
+    'id':        id,
+    'text':      text,
+    'createdAt': createdAt.toIso8601String(),
+    'imagePath': imagePath,
+  };
+
+  factory RefundNote.fromJson(Map<String, dynamic> j) => RefundNote(
+    id:         j['id'] as String,
+    text:       j['text'] as String,
+    createdAt:  DateTime.parse(j['createdAt'] as String),
+    imagePath:  j['imagePath'] as String?,
+  );
+}
+
 enum RefundStatus {
   processing,
   awaitingConfirmation,
@@ -66,6 +100,7 @@ class RefundItem {
     this.refundDestination = RefundDestination.unknown,
     this.refundIssuer,
     this.senderAddress,
+    this.notes = const [],
   });
 
   final String id;
@@ -97,6 +132,8 @@ class RefundItem {
   /// Raw sender address: phone number / short code for SMS, email for email.
   /// Used to deep-link back to the original message thread.
   final String? senderAddress;
+  /// User-authored follow-up notes (text + optional photo).
+  final List<RefundNote> notes;
 
   /// Formatted amount string, e.g. "₹499.00" or "$34.99"
   String get formattedAmount => '$currency${amount.toStringAsFixed(2)}';
@@ -138,6 +175,7 @@ class RefundItem {
     RefundDestination? refundDestination,
     String? refundIssuer,
     String? senderAddress,
+    List<RefundNote>? notes,
   }) {
     return RefundItem(
       id: id ?? this.id,
@@ -159,6 +197,7 @@ class RefundItem {
       refundDestination: refundDestination ?? this.refundDestination,
       refundIssuer: refundIssuer ?? this.refundIssuer,
       senderAddress: senderAddress ?? this.senderAddress,
+      notes: notes ?? this.notes,
     );
   }
 
@@ -238,6 +277,7 @@ class RefundItem {
       'refundDestination': refundDestination.name,
       'refundIssuer': refundIssuer,
       'senderAddress': senderAddress,
+      'notes': notes.map((n) => n.toJson()).toList(),
     };
   }
 
@@ -270,6 +310,10 @@ class RefundItem {
           : RefundDestination.unknown,
       refundIssuer: json['refundIssuer'] as String?,
       senderAddress: json['senderAddress'] as String?,
+      notes: (json['notes'] as List<dynamic>?)
+              ?.map((e) => RefundNote.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
     );
   }
 }

@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_logo.dart';
 import '../../services/auth_service.dart';
 import '../../services/email_scanner_service.dart';
+import '../../main.dart' show themeModeNotifier;
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -109,6 +110,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 32),
             _buildSyncSection(context),
+            const SizedBox(height: 24),
+            _buildAppearanceSection(context),
             const SizedBox(height: 24),
             _buildPersonaBadge(context),
             const SizedBox(height: 48),
@@ -227,6 +230,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
           badge: _emailSyncEnabled && _approvedEmailAccount != null
               ? _approvedEmailAccount!
               : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAppearanceSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Appearance', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        ValueListenableBuilder<ThemeMode>(
+          valueListenable: themeModeNotifier,
+          builder: (_, current, __) => SegmentedButton<ThemeMode>(
+            segments: const [
+              ButtonSegment(
+                value: ThemeMode.light,
+                icon: Icon(Icons.light_mode_outlined, size: 18),
+                label: Text('Light'),
+              ),
+              ButtonSegment(
+                value: ThemeMode.system,
+                icon: Icon(Icons.brightness_auto_outlined, size: 18),
+                label: Text('System'),
+              ),
+              ButtonSegment(
+                value: ThemeMode.dark,
+                icon: Icon(Icons.dark_mode_outlined, size: 18),
+                label: Text('Dark'),
+              ),
+            ],
+            selected: {current},
+            onSelectionChanged: (Set<ThemeMode> val) async {
+              final mode = val.first;
+              themeModeNotifier.value = mode;
+              final prefs = await SharedPreferences.getInstance();
+              final key = mode == ThemeMode.light ? 'light'
+                        : mode == ThemeMode.dark  ? 'dark'
+                        : 'system';
+              await prefs.setString('theme_mode', key);
+            },
+            style: SegmentedButton.styleFrom(
+              selectedBackgroundColor: AppColors.primary.withValues(alpha: 0.15),
+              selectedForegroundColor: AppColors.primary,
+            ),
+          ),
         ),
       ],
     );

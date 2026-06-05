@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/responsive.dart';
 import '../../models/refund_item.dart';
@@ -324,6 +327,168 @@ class _RefundDetailScreenState extends State<RefundDetailScreen>
                 _showCurrencyPicker(context);
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined, color: AppColors.primary),
+              title: const Text('Edit amount'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showAmountEditor(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.swap_horiz_outlined, color: AppColors.primary),
+              title: const Text('Change status'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showStatusPicker(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAmountEditor(BuildContext context) async {
+    final refund = _refund;
+    if (refund == null) return;
+    final ctrl = TextEditingController(text: refund.amount.toStringAsFixed(2));
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+            24, 16, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Edit Amount', style: Theme.of(ctx).textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text('Correct the amount if the scanner got it wrong.',
+                style: Theme.of(ctx).textTheme.bodySmall),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: ctrl,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                prefixText: '${refund.currency} ',
+                labelText: 'Amount',
+                border: const OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity, height: 52,
+              child: FilledButton(
+                onPressed: () async {
+                  final val = double.tryParse(ctrl.text.trim());
+                  if (val == null || val <= 0) return;
+                  final updated = refund.copyWith(amount: val);
+                  await _storage.mergeAndSave([updated]);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) setState(() => _refund = updated);
+                },
+                child: const Text('Save',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showStatusPicker(BuildContext context) async {
+    final refund = _refund;
+    if (refund == null) return;
+
+    const statuses = [
+      RefundStatus.processing,
+      RefundStatus.awaitingConfirmation,
+      RefundStatus.bankProcessing,
+      RefundStatus.completed,
+    ];
+
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text('Change Status', style: Theme.of(ctx).textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text('Manually update the refund progress.',
+                style: Theme.of(ctx).textTheme.bodySmall),
+            const SizedBox(height: 8),
+            ...statuses.map((s) {
+              final isCurrent = refund.status == s;
+              final color = RefundItem(
+                id: '', merchantName: '', amount: 0,
+                status: s, source: refund.source,
+              ).statusColor;
+              return ListTile(
+                leading: Container(
+                  width: 12, height: 12,
+                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                ),
+                title: Text(RefundItem(
+                  id: '', merchantName: '', amount: 0,
+                  status: s, source: refund.source,
+                ).statusLabel),
+                trailing: isCurrent
+                    ? Icon(Icons.check, color: color, size: 20)
+                    : null,
+                onTap: isCurrent ? null : () async {
+                  final isNowCompleted = s == RefundStatus.completed;
+                  final updated = refund.copyWith(
+                    status: s,
+                    manuallyCompleted: isNowCompleted || refund.manuallyCompleted,
+                  );
+                  await _storage.mergeAndSave([updated]);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (mounted) {
+                    setState(() {
+                      _refund = updated;
+                      if (isNowCompleted) _showCoins = true;
+                    });
+                    _timelineCtrl.forward(from: 0);
+                  }
+                },
+              );
+            }),
           ],
         ),
       ),
@@ -447,6 +612,14 @@ class _RefundDetailScreenState extends State<RefundDetailScreen>
             _Timeline(steps: steps, controller: _timelineCtrl),
             const SizedBox(height: 32),
             _MerchantContactCard(refund: refund),
+            const SizedBox(height: 24),
+            _NotesSection(
+              refund: refund,
+              onNoteAdded: (updated) {
+                setState(() => _refund = updated);
+                _timelineCtrl.forward(from: 0);
+              },
+            ),
             const SizedBox(height: 120),
           ],
         ),
@@ -1563,3 +1736,229 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Notes section
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _NotesSection extends StatelessWidget {
+  const _NotesSection({required this.refund, required this.onNoteAdded});
+
+  final RefundItem refund;
+  final ValueChanged<RefundItem> onNoteAdded;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Notes', style: Theme.of(context).textTheme.titleLarge),
+            TextButton.icon(
+              onPressed: () => _showAddNoteSheet(context),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add note'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (refund.notes.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              'No notes yet. Tap "Add note" to record a follow-up.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          )
+        else
+          ...refund.notes.reversed.map((note) => _NoteCard(note: note, isDark: isDark)),
+      ],
+    );
+  }
+
+  Future<void> _showAddNoteSheet(BuildContext context) async {
+    final storage = RefundStorageService();
+    final textCtrl = TextEditingController();
+    String? pickedImagePath;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setInner) {
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+                24, 16, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text('Add Note', style: Theme.of(ctx).textTheme.titleLarge),
+                const SizedBox(height: 4),
+                Text(
+                  'Record a follow-up, ticket number, or any detail.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: textCtrl,
+                  maxLines: 3,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'e.g. Spoke to agent, ticket #XYZ...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (pickedImagePath != null) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.file(
+                      File(pickedImagePath!),
+                      height: 120,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => setInner(() => pickedImagePath = null),
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Remove photo'),
+                  ),
+                ] else
+                  ActionChip(
+                    avatar: const Icon(Icons.attach_file, size: 16),
+                    label: const Text('Attach photo'),
+                    onPressed: () async {
+                      final picker = ImagePicker();
+                      final img = await picker.pickImage(
+                        source: ImageSource.gallery,
+                        imageQuality: 75,
+                      );
+                      if (img == null) return;
+                      final docsDir = await getApplicationDocumentsDirectory();
+                      final destDir = Directory(
+                          '${docsDir.path}/refundoo_notes/${refund.id}');
+                      await destDir.create(recursive: true);
+                      final dest = File(
+                          '${destDir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg');
+                      await File(img.path).copy(dest.path);
+                      setInner(() => pickedImagePath = dest.path);
+                    },
+                  ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: FilledButton(
+                    onPressed: () async {
+                      final text = textCtrl.text.trim();
+                      if (text.isEmpty) return;
+                      final note = RefundNote(
+                        id:        DateTime.now().millisecondsSinceEpoch.toString(),
+                        text:      text,
+                        createdAt: DateTime.now(),
+                        imagePath: pickedImagePath,
+                      );
+                      final updated = refund.copyWith(
+                        notes: [...refund.notes, note],
+                      );
+                      await storage.mergeAndSave([updated]);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      onNoteAdded(updated);
+                    },
+                    child: const Text('Save Note',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        });
+      },
+    );
+  }
+}
+
+class _NoteCard extends StatelessWidget {
+  const _NoteCard({required this.note, required this.isDark});
+
+  final RefundNote note;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.notes_outlined, size: 14, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                _formatDate(note.createdAt),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AppColors.textMuted,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(note.text, style: Theme.of(context).textTheme.bodyMedium),
+          if (note.imagePath != null) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.file(
+                File(note.imagePath!),
+                height: 140,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _formatDate(DateTime d) {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun',
+                    'Jul','Aug','Sep','Oct','Nov','Dec'];
+    final h  = d.hour > 12 ? d.hour - 12 : (d.hour == 0 ? 12 : d.hour);
+    final am = d.hour < 12;
+    return '${months[d.month - 1]} ${d.day}  '
+           '${h}:${d.minute.toString().padLeft(2, '0')} ${am ? 'AM' : 'PM'}';
+  }
+}

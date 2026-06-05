@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_drawer.dart';
 import '../../models/refund_item.dart';
+import '../../services/export_service.dart';
 import '../../services/refund_storage_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -175,6 +176,21 @@ class _ReportsScreenState extends State<ReportsScreen> {
             icon: const Icon(Icons.refresh_outlined),
             onPressed: _load,
             tooltip: 'Refresh',
+          ),
+          IconButton(
+            icon: const Icon(Icons.ios_share_outlined),
+            tooltip: 'Export CSV',
+            onPressed: _refunds.isEmpty ? null : () async {
+              final ok = await ExportService.exportCsv(_refunds);
+              if (!ok && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Export cancelled or failed.'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
           ),
         ],
       ),

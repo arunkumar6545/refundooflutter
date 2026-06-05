@@ -108,6 +108,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   RefundCategory? _filterCategory;
   String _chipFilter = 'Processing'; // default to Processing tab on launch
   Offset? _fabOffset; // null until first layout; then user can drag it
+  bool _searching = false;
+  final _searchCtrl = TextEditingController();
+  String _searchQuery = '';
 
   double get _pendingAmount {
     final pending = _refunds.where((r) => r.status != RefundStatus.completed);
@@ -207,6 +210,16 @@ class _DashboardScreenState extends State<DashboardScreen>
         break;
     }
 
+    // Apply search query filter last
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      list = list.where((r) =>
+        r.merchantName.toLowerCase().contains(q) ||
+        (r.orderId?.toLowerCase().contains(q) ?? false) ||
+        (r.description?.toLowerCase().contains(q) ?? false)
+      ).toList();
+    }
+
     return list;
   }
 
@@ -262,7 +275,86 @@ class _DashboardScreenState extends State<DashboardScreen>
     _scrollCtrl.dispose();
     _entranceCtrl.dispose();
     _countCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
+  }
+
+  Widget _buildDismissible(BuildContext context, RefundItem item, int index) {
+    return Dismissible(
+      key: Key('refund_${item.id}'),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => _confirmDelete(context, item),
+      onDismissed: (_) => _deleteRefund(item),
+      background: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.error,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.delete_outline, color: Colors.white, size: 22),
+            SizedBox(height: 4),
+            Text('Delete',
+                style: TextStyle(color: Colors.white, fontSize: 11,
+                    fontWeight: FontWeight.w700)),
+          ],
+        ),
+      ),
+      child: _AnimatedListItem(
+        index: index,
+        controller: _entranceCtrl,
+        child: _ActivityTile(
+          item: item,
+          onTap: () async {
+            await context.push('/refund/${item.id}');
+            if (mounted) _loadRefunds(showLoader: false);
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteRefund(RefundItem item) async {
+    final all = await _storage.loadRefunds();
+    final updated = all.where((r) => r.id != item.id).toList();
+    await _storage.saveRefunds(updated);
+    if (!mounted) return;
+    setState(() {
+      _refunds = updated;
+      // Restart entrance animation so remaining tiles re-stagger
+      _entranceCtrl.forward(from: 0);
+    });
+  }
+
+  Future<bool> _confirmDelete(BuildContext context, RefundItem item) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete refund?'),
+        content: Text(
+          'Remove "${item.merchantName}" (${item.formattedAmount})?\nThis cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   void _scrollToRecentActivity() {
@@ -461,17 +553,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                       delegate: SliverChildBuilderDelegate(
                                         (_, i) {
                                           final item = _filteredRefunds[i];
-                                          return _AnimatedListItem(
-                                            index: i,
-                                            controller: _entranceCtrl,
-                                            child: _ActivityTile(
-                                              item: item,
-                                              onTap: () async {
-                                                await context.push('/refund/${item.id}');
-                                                if (mounted) _loadRefunds(showLoader: false);
-                                              },
-                                            ),
-                                          );
+                                          return _buildDismissible(context, item, i);
                                         },
                                         childCount: _filteredRefunds.length,
                                       ),
@@ -481,17 +563,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     delegate: SliverChildBuilderDelegate(
                                       (_, i) {
                                         final item = _filteredRefunds[i];
-                                        return _AnimatedListItem(
-                                          index: i,
-                                          controller: _entranceCtrl,
-                                          child: _ActivityTile(
-                                            item: item,
-                                            onTap: () async {
-                                              await context.push('/refund/${item.id}');
-                                              if (mounted) _loadRefunds(showLoader: false);
-                                            },
-                                          ),
-                                        );
+                                        return _buildDismissible(context, item, i);
                                       },
                                       childCount: _filteredRefunds.length,
                                     ),
@@ -614,42 +686,83 @@ class _DashboardScreenState extends State<DashboardScreen>
       padding: EdgeInsets.fromLTRB(tablet ? 24 : 16, 16, 16, 8),
       child: Row(
         children: [
-          // Hamburger — phone only (tablet uses persistent NavigationRail)
-          if (!tablet)
+          if (!tablet && !_searching)
             IconButton(
               icon: const Icon(Icons.menu_rounded, size: 28),
               tooltip: 'Menu',
               onPressed: () => _scaffoldKey.currentState?.openDrawer(),
             ),
-          // App logo + name (centred on phone, left-aligned on tablet)
+          // Title or search field
           Expanded(
-            child: Row(
-              mainAxisAlignment:
-                  tablet ? MainAxisAlignment.start : MainAxisAlignment.center,
-              children: [
-                if (!tablet) ...[
-                  const AppLogo(size: 26, borderRadius: 8, showGlow: false),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Refundoo',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: _searching
+                  ? TextField(
+                      key: const ValueKey('search_field'),
+                      controller: _searchCtrl,
+                      autofocus: true,
+                      onChanged: (v) => setState(() => _searchQuery = v),
+                      decoration: InputDecoration(
+                        hintText: 'Search merchant or order ID…',
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
                         ),
-                  ),
-                ] else
-                  Text(
-                    'Dashboard',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.3,
-                        ),
-                  ),
-              ],
+                        filled: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        isDense: true,
+                      ),
+                    )
+                  : Row(
+                      key: const ValueKey('title_row'),
+                      mainAxisAlignment: tablet
+                          ? MainAxisAlignment.start
+                          : MainAxisAlignment.center,
+                      children: [
+                        if (!tablet) ...[
+                          const AppLogo(size: 26, borderRadius: 8, showGlow: false),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Refundoo',
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.5,
+                                ),
+                          ),
+                        ] else
+                          Text(
+                            'Dashboard',
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                ),
+                          ),
+                      ],
+                    ),
             ),
           ),
-          // Add refund — phone only (tablet shows it in rail trailing)
-          if (!tablet)
+          // Search / close toggle
+          IconButton(
+            icon: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: _searching
+                  ? const Icon(Icons.close, key: ValueKey('close'), size: 26)
+                  : const Icon(Icons.search_outlined, key: ValueKey('search'), size: 26),
+            ),
+            tooltip: _searching ? 'Close search' : 'Search',
+            onPressed: () {
+              setState(() {
+                _searching = !_searching;
+                if (!_searching) {
+                  _searchCtrl.clear();
+                  _searchQuery = '';
+                }
+              });
+            },
+          ),
+          if (!tablet && !_searching)
             IconButton(
               icon: const Icon(Icons.add_circle_outline, size: 28),
               tooltip: 'Add refund',
