@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/category_theme.dart';
 import '../../core/theme/responsive.dart';
 import '../../core/widgets/app_logo.dart';
 import '../../core/widgets/app_drawer.dart';
@@ -19,64 +20,7 @@ import '../../services/ad_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/widget_service.dart';
 
-/// Gradient backgrounds per category — no network dependency.
-const _categoryGradients = {
-  RefundCategory.travel: LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
-  ),
-  RefundCategory.retail: LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF6A1B9A), Color(0xFF4A148C)],
-  ),
-  RefundCategory.services: LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF2E7D32), Color(0xFF1B5E20)],
-  ),
-  RefundCategory.foodDining: LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFFE65100), Color(0xFFBF360C)],
-  ),
-  RefundCategory.electronics: LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF263238), Color(0xFF37474F)],
-  ),
-  RefundCategory.entertainment: LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFFAD1457), Color(0xFF880E4F)],
-  ),
-};
-
-const _genericGradient = LinearGradient(
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-  colors: [Color(0xFF004D40), Color(0xFF00695C)],
-);
-
-IconData _activityIconFor(RefundCategory? category) {
-  switch (category) {
-    case RefundCategory.travel:
-      return Icons.confirmation_number_outlined;
-    case RefundCategory.retail:
-      return Icons.shopping_cart_outlined;
-    case RefundCategory.services:
-      return Icons.description_outlined;
-    case RefundCategory.foodDining:
-      return Icons.restaurant_outlined;
-    case RefundCategory.electronics:
-      return Icons.devices_outlined;
-    case RefundCategory.entertainment:
-      return Icons.movie_outlined;
-    default:
-      return Icons.receipt_long_outlined;
-  }
-}
+// Icon + gradient helpers are in lib/core/theme/category_theme.dart
 
 String _fmtDate(DateTime d) {
   const months = ['Jan','Feb','Mar','Apr','May','Jun',
@@ -988,11 +932,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         cats.where((x) => x.category == c).firstOrNull?.currency ?? '₹';
     int countFor(RefundCategory c) =>
         cats.where((x) => x.category == c).firstOrNull?.count ?? 0;
-    void onCategoryTap(RefundCategory c) => setState(() {
-          _filterKind = _DashboardFilterKind.category;
-          _filterCategory = c;
-          _rebuildDerived();
-        });
+    void onCategoryTap(RefundCategory c) =>
+        context.push('/category/${c.name}');
 
     final categories = [
       RefundCategory.travel,
@@ -1352,16 +1293,7 @@ const _categoryBgIcons = <RefundCategory, List<IconData>>{
   RefundCategory.entertainment: [Icons.movie, Icons.music_note, Icons.sports_esports],
 };
 
-IconData _iconForCategory(RefundCategory c) {
-  switch (c) {
-    case RefundCategory.travel:        return Icons.flight_takeoff;
-    case RefundCategory.retail:        return Icons.shopping_bag_outlined;
-    case RefundCategory.services:      return Icons.account_tree_outlined;
-    case RefundCategory.foodDining:    return Icons.restaurant_outlined;
-    case RefundCategory.electronics:   return Icons.devices_outlined;
-    case RefundCategory.entertainment: return Icons.movie_outlined;
-  }
-}
+// iconForCategory is imported from category_theme.dart
 
 class _CategoryBento extends StatefulWidget {
   const _CategoryBento({
@@ -1423,7 +1355,7 @@ class _CategoryBentoState extends State<_CategoryBento>
 
   @override
   Widget build(BuildContext context) {
-    final gradient = _categoryGradients[widget.category] ?? _genericGradient;
+    final gradient = gradientForCategory(widget.category);
     final bgIcons  = _categoryBgIcons[widget.category] ?? [];
 
     return FadeTransition(
@@ -1503,7 +1435,7 @@ class _CategoryBentoState extends State<_CategoryBento>
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Icon(
-                              _iconForCategory(widget.category),
+                              iconForCategory(widget.category),
                               color: Colors.white,
                               size: 18,
                             ),
@@ -1692,7 +1624,7 @@ class _ActivityTileState extends State<_ActivityTile> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      _activityIconFor(item.category),
+                      iconForCategory(item.category),
                       color: item.isOverdue
                           ? const Color(0xFFB91C1C)
                           : AppColors.primary,

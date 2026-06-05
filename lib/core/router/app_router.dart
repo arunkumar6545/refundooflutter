@@ -6,9 +6,11 @@ import '../../features/profile/profile_screen.dart';
 import '../../features/add_refund/add_refund_screen.dart';
 import '../../features/refund_detail/refund_detail_screen.dart';
 import '../../features/archive/archive_screen.dart';
+import '../../features/category/category_refunds_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/splash/splash_screen.dart';
 import '../../features/login/login_screen.dart';
+import '../../models/refund_item.dart';
 import '../../services/auth_service.dart';
 
 final GlobalKey<NavigatorState> _rootKey = GlobalKey<NavigatorState>();
@@ -123,6 +125,21 @@ GoRouter createAppRouter() {
         path: '/archive',
         pageBuilder: (context, state) =>
             _slidePage(context: context, state: state, child: const ArchiveScreen()),
+      ),
+      GoRoute(
+        path: '/category/:name',
+        pageBuilder: (context, state) {
+          final name = state.pathParameters['name'] ?? '';
+          final category = RefundCategory.values.firstWhere(
+            (c) => c.name == name,
+            orElse: () => RefundCategory.retail,
+          );
+          return _slidePage(
+            context: context,
+            state: state,
+            child: CategoryRefundsScreen(category: category),
+          );
+        },
       ),
       GoRoute(
         path: '/refund/:id',
