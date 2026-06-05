@@ -5,8 +5,10 @@ import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_logo.dart';
 import '../../services/auth_service.dart';
 import '../../services/email_scanner_service.dart';
-import '../../main.dart' show themeModeNotifier;
+import 'package:intl/intl.dart';
+import '../../main.dart' show premiumNotifier, themeModeNotifier;
 import '../../services/notification_service.dart';
+import '../../services/premium_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -26,12 +28,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _approvedEmailAccount;
   bool _isGuest = false;
   bool _notificationsEnabled = true;
+  bool _isPremium = false;
+  DateTime? _premiumExpiry;
 
   @override
   void initState() {
     super.initState();
     _loadUser();
     _loadSyncStatus();
+    _loadPremiumStatus();
   }
 
   Future<void> _loadUser() async {
@@ -47,6 +52,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isGuest = guest;
       });
     }
+  }
+
+  Future<void> _loadPremiumStatus() async {
+    final active = await PremiumService.isPremium;
+    final expiry = await PremiumService.expiryDate;
+    if (!mounted) return;
+    setState(() {
+      _isPremium = active;
+      _premiumExpiry = expiry;
+    });
   }
 
   Future<void> _loadSyncStatus() async {
@@ -100,9 +115,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 16),
             _buildAvatar(context),
             const SizedBox(height: 8),
-            Text(
-              _name.isNotEmpty ? _name : 'User',
-              style: Theme.of(context).textTheme.headlineMedium,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _name.isNotEmpty ? _name : 'User',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                if (_isPremium) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFB8860B), Color(0xFFFFD700)],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.workspace_premium_rounded,
+                            color: Colors.white, size: 12),
+                        SizedBox(width: 3),
+                        Text('Premium',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             ),
             Text(
               _email.isNotEmpty ? _email : (_isGuest ? 'Guest' : ''),
@@ -111,7 +157,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: AppColors.textMuted,
                   ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 8),
+            _buildPremiumSection(context),
+            const SizedBox(height: 24),
             _buildSyncSection(context),
             const SizedBox(height: 24),
             _buildNotificationsSection(context),
@@ -180,6 +228,226 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ],
     );
+  }
+
+  // ── Premium section ─────────────────────────────────────────────────────
+
+  Widget _buildPremiumSection(BuildContext context) {
+    return _isPremium
+        ? _buildPremiumActiveCard(context)
+        : _buildPremiumUpgradeCard(context);
+  }
+
+  Widget _buildPremiumUpgradeCard(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _showPurchaseSheet(context),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF7B4F00), Color(0xFFB8860B)],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFB8860B).withValues(alpha: 0.35),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.workspace_premium_rounded,
+                  color: Colors.white, size: 28),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Go Premium',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 3),
+                  const Text('Remove all ads forever · ₹100/year',
+                      style: TextStyle(
+                          color: Colors.white70, fontSize: 12)),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Text('Upgrade',
+                  style: TextStyle(
+                      color: Color(0xFF7B4F00),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPremiumActiveCard(BuildContext context) {
+    final expiryStr = _premiumExpiry != null
+        ? DateFormat('d MMM yyyy').format(_premiumExpiry!)
+        : '—';
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF4A3200), Color(0xFF7B5C00)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7B5C00).withValues(alpha: 0.3),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.workspace_premium_rounded,
+                  color: Color(0xFFFFD700), size: 24),
+              const SizedBox(width: 10),
+              const Text('Premium Active',
+                  style: TextStyle(
+                      color: Color(0xFFFFD700),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFD700).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: const Color(0xFFFFD700).withValues(alpha: 0.5)),
+                ),
+                child: const Text('Ad-free',
+                    style: TextStyle(
+                        color: Color(0xFFFFD700),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text('Valid until $expiryStr',
+              style:
+                  const TextStyle(color: Colors.white70, fontSize: 13)),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white30),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => _showPurchaseSheet(context),
+                  child: const Text('Renew'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    side: const BorderSide(color: Colors.redAccent),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => _confirmRevoke(context),
+                  child: const Text('Cancel'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Purchase bottom-sheet.
+  ///
+  /// TODO: Replace the "Confirm Purchase" handler with your real payment flow
+  ///       (in_app_purchase / Razorpay / etc.) and only call
+  ///       [PremiumService.activatePremium] after a verified payment callback.
+  Future<void> _showPurchaseSheet(BuildContext context) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _PremiumPurchaseSheet(
+        onPurchase: () async {
+          // ── TODO: wire real payment here ──────────────────────────────────
+          await PremiumService.activatePremium();
+          premiumNotifier.value = true;
+          // ─────────────────────────────────────────────────────────────────
+          if (!mounted) return;
+          Navigator.of(context).pop();
+          await _loadPremiumStatus();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉  Welcome to Premium! Ads removed.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _confirmRevoke(BuildContext context) async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Cancel Premium?'),
+        content: const Text(
+            'You will lose your ad-free experience and your Premium badge.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child:
+                  const Text('Cancel Premium', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (yes != true) return;
+    await PremiumService.revokePremium();
+    premiumNotifier.value = false;
+    await _loadPremiumStatus();
   }
 
   Widget _buildSyncSection(BuildContext context) {
@@ -549,6 +817,156 @@ class _SyncStatusCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Premium purchase bottom-sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PremiumPurchaseSheet extends StatelessWidget {
+  const _PremiumPurchaseSheet({required this.onPurchase});
+  final VoidCallback onPurchase;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: EdgeInsets.only(
+        left: 24, right: 24, top: 8,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 32,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Container(
+            width: 36, height: 4,
+            margin: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.textMuted.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Crown icon
+          Container(
+            width: 72, height: 72,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFB8860B), Color(0xFFFFD700)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                    color: const Color(0xFFFFD700).withValues(alpha: 0.4),
+                    blurRadius: 20,
+                    offset: const Offset(0, 6)),
+              ],
+            ),
+            child: const Icon(Icons.workspace_premium_rounded,
+                color: Colors.white, size: 38),
+          ),
+          const SizedBox(height: 20),
+          const Text('Refundoo Premium',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text('One-time yearly subscription',
+              style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textMuted)),
+          const SizedBox(height: 24),
+          // Benefits
+          _Benefit(
+              icon: Icons.block_outlined,
+              title: 'No ads, ever',
+              subtitle: 'Banners and interstitials are completely removed'),
+          const SizedBox(height: 12),
+          _Benefit(
+              icon: Icons.workspace_premium_rounded,
+              title: 'Premium badge',
+              subtitle: 'Gold crown badge shown on your profile'),
+          const SizedBox(height: 12),
+          _Benefit(
+              icon: Icons.favorite_outline_rounded,
+              title: 'Support the app',
+              subtitle: 'Help keep Refundoo free & actively developed'),
+          const SizedBox(height: 28),
+          // Price + CTA
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFB8860B),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                elevation: 0,
+              ),
+              onPressed: onPurchase,
+              child: const Text('Get Premium — ₹100/year',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Disclaimer
+          Text(
+            'Subscription activates for 1 year from purchase date.\n'
+            'Payment handled securely via your app store.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 11, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Benefit extends StatelessWidget {
+  const _Benefit(
+      {required this.icon, required this.title, required this.subtitle});
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(
+            color: const Color(0xFFB8860B).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: const Color(0xFFB8860B), size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 14)),
+              const SizedBox(height: 2),
+              Text(subtitle,
+                  style: const TextStyle(
+                      fontSize: 12, color: AppColors.textMuted)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

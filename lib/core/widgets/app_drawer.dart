@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../main.dart' show premiumNotifier;
 import '../theme/app_colors.dart';
 import 'app_logo.dart';
 import '../../services/auth_service.dart';
@@ -274,24 +275,60 @@ class _DrawerHeader extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            // Tag pill
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.25)),
-              ),
-              child: Text(
-                isGuest ? 'Guest mode' : 'Google Account',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+            // Tag pill(s)
+            Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25)),
+                  ),
+                  child: Text(
+                    isGuest ? 'Guest mode' : 'Google Account',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
+                ValueListenableBuilder<bool>(
+                  valueListenable: premiumNotifier,
+                  builder: (_, isPremium, __) {
+                    if (!isPremium) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFB8860B), Color(0xFFFFD700)],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.workspace_premium_rounded,
+                                color: Colors.white, size: 11),
+                            SizedBox(width: 3),
+                            Text('Premium',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ],
         ),

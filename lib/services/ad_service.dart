@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import '../main.dart' show premiumNotifier;
+
 /// Manages all Google AdMob ad lifecycle for the app.
 ///
 /// ── How to go live ────────────────────────────────────────────────────────
@@ -90,6 +92,7 @@ class AdService {
   /// Shows the launch interstitial **once per app session**.
   /// Call after the first content frame is ready (e.g. after _loadRefunds).
   void showSessionInterstitial() {
+    if (premiumNotifier.value) return; // Premium users skip all ads.
     if (_sessionInterstitialShown) return;
     if (_interstitial == null) return;
     _sessionInterstitialShown = true;

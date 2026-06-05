@@ -6,9 +6,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app/app.dart';
 import 'services/ad_service.dart';
 import 'services/notification_service.dart';
+import 'services/premium_service.dart';
 
 /// Global theme mode notifier — updated by ProfileScreen, consumed by app.dart.
 final themeModeNotifier = ValueNotifier<ThemeMode>(ThemeMode.system);
+
+/// Global premium status notifier — updated by ProfileScreen after purchase.
+final premiumNotifier = ValueNotifier<bool>(false);
 
 ThemeMode _parseThemeMode(String? value) {
   switch (value) {
@@ -23,6 +27,7 @@ void main() async {
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   final prefs = await SharedPreferences.getInstance();
   themeModeNotifier.value = _parseThemeMode(prefs.getString('theme_mode'));
+  premiumNotifier.value = await PremiumService.isPremium;
   await NotificationService.init();
   unawaited(NotificationService.scheduleDailyReminder());
   unawaited(AdService.instance.initialize()); // preload interstitial in background

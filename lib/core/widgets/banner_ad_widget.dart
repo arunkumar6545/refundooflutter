@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import '../../main.dart' show premiumNotifier;
 import '../../services/ad_service.dart';
 
 /// A banner ad slot (320×50 px).
@@ -42,6 +43,8 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Premium users see no ads.
+    if (premiumNotifier.value) return const SizedBox.shrink();
     if (!_loaded || _ad == null) return const SizedBox.shrink();
     return SafeArea(
       top: false,
