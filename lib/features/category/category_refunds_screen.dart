@@ -25,6 +25,8 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
   List<RefundItem> _all = [];
   bool _loading = true;
 
+  int get _overdueCount => _all.where((r) => r.isOverdue).length;
+
   String? _chipFilter;
 
   late final AnimationController _entranceCtrl;
@@ -142,14 +144,65 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
                   child: Icon(icon, color: Colors.white, size: 18),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  widget.category.label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 18,
+                Expanded(
+                  child: Text(
+                    widget.category.label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                    ),
                   ),
                 ),
+                // Refund count badge
+                if (!_loading) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${_all.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+                  // Overdue badge — only when there are overdue items
+                  if (_overdueCount > 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFB91C1C).withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.warning_amber_rounded,
+                              size: 11, color: Colors.white),
+                          const SizedBox(width: 3),
+                          Text(
+                            '$_overdueCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              height: 1.0,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ],
             ),
           ),
@@ -197,11 +250,7 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
       );
     }).where((r) => r.count > 0).toList();
 
-    final grandTotal    = _all.fold(0.0, (s, r) => s + r.amount);
-    final totalPending  = _all
-        .where((r) => r.status != RefundStatus.completed)
-        .fold(0.0, (s, r) => s + r.amount);
-    final overdueCount  = _all.where((r) => r.isOverdue).length;
+    final grandTotal   = _all.fold(0.0, (s, r) => s + r.amount);
 
     final fmt = NumberFormat('#,##0.00', 'en_IN');
     const sym = '₹';
@@ -211,76 +260,7 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
       child: Column(
         children: [
-          // Top strip: count + pending badge
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(
-              children: [
-                Text(
-                  '${_all.length} refund${_all.length == 1 ? '' : 's'} in this category',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.88),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const Spacer(),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (overdueCount > 0) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFB91C1C).withValues(alpha: 0.30),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.warning_amber_rounded,
-                                size: 11, color: Colors.white),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$overdueCount overdue',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                height: 1.0,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    if (totalPending > 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.20),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '$sym${fmt.format(totalPending)} pending',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            height: 1.0,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // Status breakdown card
+      // Status breakdown card
           if (rows.isNotEmpty)
             Container(
               decoration: BoxDecoration(
