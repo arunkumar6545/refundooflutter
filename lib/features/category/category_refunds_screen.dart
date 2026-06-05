@@ -9,8 +9,6 @@ import '../../core/theme/category_theme.dart';
 import '../../models/refund_item.dart';
 import '../../services/refund_storage_service.dart';
 
-/// Shows all refunds for a single [category], with the same status-chip
-/// filters that appear on the main dashboard.
 class CategoryRefundsScreen extends StatefulWidget {
   const CategoryRefundsScreen({super.key, required this.category});
 
@@ -27,15 +25,14 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
   List<RefundItem> _all = [];
   bool _loading = true;
 
-  // Status chip filter — null means "show all statuses"
   String? _chipFilter;
 
-  // Entrance animation for list tiles
   late final AnimationController _entranceCtrl;
 
+  // Must match RefundItem.statusLabel values exactly.
   static const _chips = [
     'Processing',
-    'Awaiting Response',
+    'Awaiting Confirmation',
     'Bank Processing',
     'Completed',
   ];
@@ -75,7 +72,7 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
   }
 
   Future<void> _delete(RefundItem item) async {
-    final saved = await _storage.loadRefunds();
+    final saved   = await _storage.loadRefunds();
     final updated = saved.where((r) => r.id != item.id).toList();
     await _storage.saveRefunds(updated);
     if (!mounted) return;
@@ -122,77 +119,47 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          // ── Gradient header ─────────────────────────────────────────────
+          // ── Pinned AppBar — category name appears exactly ONCE ──────────
           SliverAppBar(
-            expandedHeight: 140,
             pinned: true,
+            surfaceTintColor: Colors.transparent,
+            backgroundColor: gradient.colors.first,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded,
                   color: Colors.white),
               onPressed: () => context.pop(),
             ),
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: BoxDecoration(gradient: gradient),
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.20),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Icon(icon, color: Colors.white, size: 28),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.category.label,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.1,
-                                ),
-                              ),
-                              Text(
-                                '${_all.length} refund${_all.length == 1 ? '' : 's'}',
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.80),
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  widget.category.label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
                   ),
                 ),
-              ),
-              // Keep title in collapsed state
-              title: Text(
-                widget.category.label,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w700),
-              ),
-              titlePadding: const EdgeInsets.only(left: 56, bottom: 14),
+              ],
             ),
-            backgroundColor: gradient.colors.first,
           ),
 
-          // ── Status filter chips ──────────────────────────────────────────
-          SliverToBoxAdapter(child: _buildChips()),
+          // ── Summary card — scrolls with content ────────────────────────
+          if (!_loading)
+            SliverToBoxAdapter(child: _buildSummary(gradient)),
 
-          // ── List ────────────────────────────────────────────────────────
+          // ── Status filter chips ──────────────────────────────────────────
+          SliverToBoxAdapter(child: _buildChips(gradient)),
+
+          // ── Refund list ─────────────────────────────────────────────────
           if (_loading)
             const SliverFillRemaining(
               child: Center(child: CircularProgressIndicator()),
@@ -201,7 +168,7 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
             SliverFillRemaining(child: _empty())
           else
             SliverPadding(
-              padding: const EdgeInsets.only(top: 8, bottom: 24),
+              padding: const EdgeInsets.only(top: 8, bottom: 32),
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, i) => _buildDismissible(items[i], i),
@@ -214,38 +181,292 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
     );
   }
 
-  Widget _buildChips() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-      child: Row(
+  // ── Summary card ──────────────────────────────────────────────────────────
+
+  Widget _buildSummary(LinearGradient gradient) {
+    // Aggregate per status — only statuses with at least one item are shown.
+    final statuses = RefundStatus.values;
+    final rows = statuses.map((s) {
+      final matched = _all.where((r) => r.status == s).toList();
+      return (
+        status: s,
+        count:  matched.length,
+        amount: matched.fold(0.0, (sum, r) => sum + r.amount),
+      );
+    }).where((r) => r.count > 0).toList();
+
+    final grandTotal   = _all.fold(0.0, (s, r) => s + r.amount);
+    final totalPending = _all
+        .where((r) => r.status != RefundStatus.completed)
+        .fold(0.0, (s, r) => s + r.amount);
+
+    final fmt = NumberFormat('#,##0.00', 'en_IN');
+    const sym = '₹';
+
+    return Container(
+      decoration: BoxDecoration(gradient: gradient),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+      child: Column(
         children: [
-          // "All" chip to clear the filter
-          _Chip(
-            label: 'All',
-            selected: _chipFilter == null,
-            onTap: () => setState(() => _chipFilter = null),
-          ),
-          ..._chips.map((label) => Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: _Chip(
-                  label: label,
-                  selected: _chipFilter == label,
-                  onTap: () => setState(() =>
-                      _chipFilter = _chipFilter == label ? null : label),
+          // Top strip: count + pending badge
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Text(
+                  '${_all.length} refund${_all.length == 1 ? '' : 's'} in this category',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.88),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              )),
+                const Spacer(),
+                if (totalPending > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.20),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$sym${fmt.format(totalPending)} pending',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // Status breakdown card
+          if (rows.isNotEmpty)
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.18), width: 1),
+              ),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Column(
+                children: [
+                  // Column headers
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text('Status',
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5)),
+                        ),
+                        SizedBox(
+                          width: 56,
+                          child: Text('Items',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5)),
+                        ),
+                        SizedBox(
+                          width: 90,
+                          child: Text('Amount',
+                              textAlign: TextAlign.end,
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.55),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(color: Colors.white24, height: 1),
+                  const SizedBox(height: 8),
+
+                  // Per-status rows
+                  ...rows.map((r) {
+                    final color = _statusColour(r.status);
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          // Status dot + label
+                          Container(
+                            width: 8, height: 8,
+                            decoration: BoxDecoration(
+                                color: color, shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _statusLabel(r.status),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                          // Count
+                          SizedBox(
+                            width: 56,
+                            child: Text(
+                              '${r.count}',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.75),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                          // Amount
+                          SizedBox(
+                            width: 90,
+                            child: Text(
+                              '$sym${fmt.format(r.amount)}',
+                              textAlign: TextAlign.end,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+
+                  const SizedBox(height: 8),
+                  Divider(
+                      color: Colors.white.withValues(alpha: 0.35), height: 1),
+                  const SizedBox(height: 10),
+
+                  // Grand total row
+                  Row(
+                    children: [
+                      const Text('Grand Total',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            height: 1.0,
+                          )),
+                      const Spacer(),
+                      Text(
+                        '${_all.length} item${_all.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.65),
+                            fontSize: 12,
+                            height: 1.0),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 90,
+                        child: Text(
+                          '$sym${fmt.format(grandTotal)}',
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            height: 1.0,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
 
+  String _statusLabel(RefundStatus s) {
+    switch (s) {
+      case RefundStatus.processing:          return 'Processing';
+      case RefundStatus.awaitingConfirmation: return 'Awaiting Confirmation';
+      case RefundStatus.bankProcessing:      return 'Bank Processing';
+      case RefundStatus.completed:           return 'Completed';
+    }
+  }
+
+  Color _statusColour(RefundStatus s) {
+    switch (s) {
+      case RefundStatus.processing:          return const Color(0xFFD97706);
+      case RefundStatus.awaitingConfirmation:
+      case RefundStatus.bankProcessing:      return const Color(0xFFDC2626);
+      case RefundStatus.completed:           return const Color(0xFF059669);
+    }
+  }
+
+  // ── Filter chips ──────────────────────────────────────────────────────────
+
+  Widget _buildChips(LinearGradient gradient) {
+    return Container(
+      // Chips sit on the gradient background, blending with the summary card.
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            gradient.colors.last.withValues(alpha: 0.25),
+            Colors.transparent,
+          ],
+        ),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Row(
+          children: [
+            _Chip(
+              label: 'All',
+              selected: _chipFilter == null,
+              onTap: () => setState(() => _chipFilter = null),
+            ),
+            ..._chips.map((label) => Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: _Chip(
+                    label: label,
+                    selected: _chipFilter == label,
+                    onTap: () => setState(() =>
+                        _chipFilter = _chipFilter == label ? null : label),
+                  ),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Dismissible wrapper ───────────────────────────────────────────────────
+
   Widget _buildDismissible(RefundItem item, int index) {
     return Dismissible(
-      key: Key('cat_refund_${item.id}'),
+      key: Key('cat_${item.id}'),
       direction: DismissDirection.endToStart,
       confirmDismiss: (_) => _confirmDelete(item),
-      onDismissed: (_) => _delete(item),
+      onDismissed:   (_) => _delete(item),
       background: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
         decoration: BoxDecoration(
@@ -281,6 +502,8 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
     );
   }
 
+  // ── Empty state ───────────────────────────────────────────────────────────
+
   Widget _empty() {
     return Center(
       child: Column(
@@ -292,7 +515,8 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
           Text(
             _chipFilter == null
                 ? 'No ${widget.category.label} refunds yet'
-                : 'No "${_chipFilter}" refunds',
+                : 'No "$_chipFilter" refunds in this category',
+            textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey.shade500, fontSize: 15),
           ),
         ],
@@ -301,7 +525,7 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
   }
 }
 
-// ── Staggered entrance animation ──────────────────────────────────────────────
+// ── Staggered entrance ────────────────────────────────────────────────────────
 
 class _TileWithEntrance extends StatelessWidget {
   const _TileWithEntrance({
@@ -373,8 +597,7 @@ class _Chip extends StatelessWidget {
                 ? Colors.white
                 : (isDark ? Colors.white70 : Colors.grey.shade700),
             fontSize: 13,
-            fontWeight:
-                selected ? FontWeight.w700 : FontWeight.w500,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             height: 1.0,
           ),
         ),
@@ -410,18 +633,14 @@ class _RefundTileState extends State<_RefundTile> {
 
   @override
   Widget build(BuildContext context) {
-    final item   = widget.item;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final date   = _fmtDate(item.detectedAt ?? item.refundIssuedAt);
-    final meta   = [
+    final item      = widget.item;
+    final isDark    = Theme.of(context).brightness == Brightness.dark;
+    final date      = _fmtDate(item.detectedAt ?? item.refundIssuedAt);
+    final meta      = [
       if (date.isNotEmpty) date,
       if (item.orderId?.isNotEmpty == true) '#${item.orderId}',
     ].join('  ·  ');
-
-    // Status badge colour
-    final statusColor = item.status == RefundStatus.completed
-        ? const Color(0xFF16A34A)
-        : AppColors.primary;
+    final statusClr = item.statusColor;
 
     return GestureDetector(
       onTapDown:   (_) => setState(() => _pressed = true),
@@ -458,7 +677,6 @@ class _RefundTileState extends State<_RefundTile> {
                       horizontal: 14, vertical: 12),
                   child: Row(
                     children: [
-                      // Category icon circle
                       Container(
                         width: 44,
                         height: 44,
@@ -479,7 +697,6 @@ class _RefundTileState extends State<_RefundTile> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      // Merchant + meta
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -493,44 +710,38 @@ class _RefundTileState extends State<_RefundTile> {
                             ),
                             if (meta.isNotEmpty) ...[
                               const SizedBox(height: 2),
-                              Text(
-                                meta,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: Colors.grey.shade500,
-                                      fontSize: 11,
-                                    ),
-                              ),
+                              Text(meta,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                          color: Colors.grey.shade500,
+                                          fontSize: 11)),
                             ],
                           ],
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Amount + status badge
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
                             item.formattedAmount,
                             style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 15,
-                            ),
+                                fontWeight: FontWeight.w800, fontSize: 15),
                           ),
                           const SizedBox(height: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: statusColor.withValues(alpha: 0.12),
+                              color: statusClr.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
                               item.statusLabel,
                               style: TextStyle(
-                                color: statusColor,
+                                color: statusClr,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
                                 height: 1.0,
