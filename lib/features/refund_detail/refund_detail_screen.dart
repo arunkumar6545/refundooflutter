@@ -1,7 +1,5 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
@@ -500,65 +498,6 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
 // Synthesised coin-ding WAV  (no external audio file needed)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Generates a two-note ascending chime WAV in memory —
-/// the classic "payment received" sound (like GPay / PhonePe).
-/// Note 1: 880 Hz (A5) · 180 ms  →  Note 2: 1175 Hz (D6) · 280 ms
-Uint8List _makeCoinWav() {
-  const sr      = 22050;
-  // Note timings in samples (pre-computed: sr * ms / 1000)
-  const n1Start = 0;
-  const n1Len   = 3969;   // 180 ms
-  const gap     = 882;    // 40 ms silence
-  const n2Start = 4851;   // n1Len + gap
-  const n2Len   = 6174;   // 280 ms
-  const frames  = 11025;  // n2Start + n2Len
-
-  final pcm = Int16List(frames);
-  for (var i = 0; i < frames; i++) {
-    double v = 0;
-    if (i >= n1Start && i < n1Start + n1Len) {
-      final t   = (i - n1Start) / sr;
-      final env = math.exp(-t * 14);           // sharp attack, fast decay
-      v = math.sin(2 * math.pi * 880.0 * t) * env;
-    } else if (i >= n2Start && i < n2Start + n2Len) {
-      final t   = (i - n2Start) / sr;
-      final env = math.exp(-t * 9);            // slightly slower decay
-      v = math.sin(2 * math.pi * 1174.66 * t) * env * 0.9;
-    }
-    pcm[i] = (v * 28000).round().clamp(-32767, 32767);
-  }
-
-  final dataBytes = frames * 2;
-  final buf = ByteData(44 + dataBytes);
-
-  void tag(int o, String s) {
-    for (var i = 0; i < s.length; i++) buf.setUint8(o + i, s.codeUnitAt(i));
-  }
-
-  tag(0, 'RIFF');
-  buf.setUint32(4, 36 + dataBytes, Endian.little);
-  tag(8, 'WAVE');
-  tag(12, 'fmt ');
-  buf.setUint32(16, 16, Endian.little);
-  buf.setUint16(20, 1, Endian.little);   // PCM
-  buf.setUint16(22, 1, Endian.little);   // mono
-  buf.setUint32(24, sr, Endian.little);
-  buf.setUint32(28, sr * 2, Endian.little);
-  buf.setUint16(32, 2, Endian.little);
-  buf.setUint16(34, 16, Endian.little);
-  tag(36, 'data');
-  buf.setUint32(40, dataBytes, Endian.little);
-
-  final out = Uint8List(44 + dataBytes);
-  out.setAll(0, buf.buffer.asUint8List(0, 44));
-  for (var i = 0; i < frames; i++) {
-    final s = pcm[i];
-    out[44 + i * 2]     = s & 0xFF;
-    out[44 + i * 2 + 1] = (s >> 8) & 0xFF;
-  }
-  return out;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Coin celebration animation
 // ─────────────────────────────────────────────────────────────────────────────
@@ -575,7 +514,6 @@ class _CoinCelebrationState extends State<_CoinCelebration>
     with TickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final List<_CoinParticle> _particles;
-  AudioPlayer? _audio;
   static final _rng = math.Random();
 
   @override
@@ -586,21 +524,10 @@ class _CoinCelebrationState extends State<_CoinCelebration>
       vsync: this,
       duration: const Duration(milliseconds: 2400),
     )..forward().whenComplete(widget.onDone);
-    _playDing();
-  }
-
-  Future<void> _playDing() async {
-    try {
-      _audio = AudioPlayer();
-      await _audio!.play(BytesSource(_makeCoinWav()));
-    } catch (_) {
-      // Audio unavailable — silently skip
-    }
   }
 
   @override
   void dispose() {
-    _audio?.dispose();
     _ctrl.dispose();
     super.dispose();
   }

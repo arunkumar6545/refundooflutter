@@ -98,7 +98,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _syncing = false;
   _DashboardFilterKind _filterKind = _DashboardFilterKind.all;
   RefundCategory? _filterCategory;
-  String _chipFilter = ''; // empty = no chip selected (show all)
+  String _chipFilter = 'Processing'; // default to Processing tab on launch
   Offset? _fabOffset; // null until first layout; then user can drag it
 
   double get _pendingAmount {
