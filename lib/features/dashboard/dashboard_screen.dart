@@ -98,7 +98,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _syncing = false;
   _DashboardFilterKind _filterKind = _DashboardFilterKind.all;
   RefundCategory? _filterCategory;
-  String _chipFilter = 'All'; // for the existing status chips: All, Processing, Completed, Action Needed
+  String _chipFilter = ''; // empty = no chip selected (show all)
   Offset? _fabOffset; // null until first layout; then user can drag it
 
   double get _pendingAmount {
@@ -147,13 +147,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   bool get _hasActiveFilter =>
       _filterKind != _DashboardFilterKind.all ||
-      _chipFilter != 'All';
+      _chipFilter.isNotEmpty;
 
   void _clearFilters() {
     setState(() {
       _filterKind = _DashboardFilterKind.all;
       _filterCategory = null;
-      _chipFilter = 'All';
+      _chipFilter = '';
     });
   }
 
@@ -177,7 +177,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         break;
     }
 
-    // Then apply status chip filter (All, Processing, Completed, Action Needed, Overdue)
+    // Then apply status chip filter (empty = show all)
     switch (_chipFilter) {
       case 'Processing':
         list = list.where((r) => r.status == RefundStatus.processing).toList();
@@ -846,71 +846,79 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (_filterKind == _DashboardFilterKind.category && _filterCategory != null) {
       return 'Showing ${_filterCategory!.label} only.';
     }
-    if (_chipFilter != 'All') return 'Showing $_chipFilter only.';
+    if (_chipFilter.isNotEmpty) return 'Showing $_chipFilter only.';
     return 'Filter active.';
   }
 
   Widget _buildFilterChips(BuildContext context) {
     final overdueCount = _refunds.where((r) => r.isOverdue).length;
-    final chips = <({String label, Color? color, Color? bg})>[
-      (label: 'All', color: null, bg: null),
-      (label: 'Processing', color: const Color(0xFFD97706), bg: const Color(0xFFFEF3C7)),
-      (label: 'Completed', color: const Color(0xFF059669), bg: const Color(0xFFD1FAE5)),
-      (label: 'Action Needed', color: const Color(0xFFDC2626), bg: const Color(0xFFFEE2E2)),
-      (label: 'Overdue', color: const Color(0xFFB91C1C), bg: const Color(0xFFFEE2E2)),
+    // No "All" chip — empty selection means show everything.
+    // Tapping the active chip again deselects it (toggle).
+    final chips = <({String label, Color color, Color bg})>[
+      (label: 'Processing',   color: const Color(0xFFD97706), bg: const Color(0xFFFEF3C7)),
+      (label: 'Completed',    color: const Color(0xFF059669), bg: const Color(0xFFD1FAE5)),
+      (label: 'Action Needed',color: const Color(0xFFDC2626), bg: const Color(0xFFFEE2E2)),
+      (label: 'Overdue',      color: const Color(0xFFB91C1C), bg: const Color(0xFFFEE2E2)),
     ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         children: chips.map((c) {
-          final selected = c.label == _chipFilter;
-          final isDark = Theme.of(context).brightness == Brightness.dark;
+          final selected      = c.label == _chipFilter;
+          final isDark        = Theme.of(context).brightness == Brightness.dark;
           final isOverdueChip = c.label == 'Overdue';
+          // Always show a faint border so chips look tappable
+          final idleBorderColor = isOverdueChip && overdueCount > 0
+              ? const Color(0xFFB91C1C).withValues(alpha: 0.30)
+              : c.color.withValues(alpha: 0.18);
+
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
-              onTap: () => setState(() => _chipFilter = c.label),
+              // Toggle: tap active chip to deselect; tap inactive chip to select
+              onTap: () => setState(
+                () => _chipFilter = selected ? '' : c.label,
+              ),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
                   color: selected
-                      ? (c.bg ?? AppColors.primary.withValues(alpha: 0.15))
+                      ? c.bg
                       : (isDark
                           ? Colors.white.withValues(alpha: 0.05)
                           : AppColors.surfaceLight),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: selected
-                        ? (c.color ?? AppColors.primary).withValues(alpha: 0.4)
-                        : (isOverdueChip && overdueCount > 0
-                            ? const Color(0xFFB91C1C).withValues(alpha: 0.35)
-                            : Colors.transparent),
+                        ? c.color.withValues(alpha: 0.5)
+                        : idleBorderColor,
                     width: 1.5,
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (c.color != null && selected) ...[
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: c.color,
-                          shape: BoxShape.circle,
-                        ),
+                    // Coloured dot — always shown (not just when selected)
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? c.color
+                            : c.color.withValues(alpha: 0.45),
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(width: 6),
-                    ],
+                    ),
+                    const SizedBox(width: 6),
                     Text(
                       c.label,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: selected
-                            ? (c.color ?? AppColors.primary)
+                            ? c.color
                             : (isOverdueChip && overdueCount > 0
                                 ? const Color(0xFFB91C1C)
                                 : AppColors.textMuted),
