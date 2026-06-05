@@ -21,8 +21,8 @@ dependencies:
   share_plus: ^10.0.0
   image_picker: ^1.1.2
   path_provider: ^2.1.5
-  flutter_local_notifications: ^18.0.1
-  timezone: ^0.9.4
+  flutter_local_notifications: ^21.0.0
+  timezone: ^0.11.0
   home_widget: ^0.6.0
   flutter_timezone: ^5.1.0
   google_mobile_ads: ^8.0.0
@@ -32,6 +32,19 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  integration_test:
+    sdk: flutter
+  mockito: ^5.4.5
+  build_runner: ^2.4.14
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/app_logo.png"
+  min_sdk_android: 23
+  adaptive_icon_background: "#0A1628"
+  adaptive_icon_foreground: "assets/images/app_logo.png"
 
 flutter:
   uses-material-design: true

@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -112,6 +112,12 @@ class _DashboardScreenState extends State<DashboardScreen>
   double _countTo   = 0;
 
   List<RefundItem> _refunds = [];
+  // Pre-computed views — updated only when source data or filters change,
+  // not on every animation/setState call.
+  List<RefundItem> _displayRefunds = [];
+  List<({RefundCategory category, double amount, bool pending, String currency, int count})>
+      _displayCategories = [];
+
   bool _loading = true;
   bool _syncing = false;
   _DashboardFilterKind _filterKind = _DashboardFilterKind.all;
@@ -121,6 +127,9 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _searching = false;
   final _searchCtrl = TextEditingController();
   String _searchQuery = '';
+
+  // Search debounce — avoids filtering on every keystroke
+  Timer? _searchDebounce;
 
   double get _pendingAmount {
     final pending = _refunds.where((r) => r.status != RefundStatus.completed);
@@ -175,17 +184,18 @@ class _DashboardScreenState extends State<DashboardScreen>
       _filterKind = _DashboardFilterKind.all;
       _filterCategory = null;
       _chipFilter = '';
+      _rebuildDerived();
     });
   }
 
-  List<RefundItem> get _filteredRefunds {
+  /// Recomputes [_displayRefunds] and [_displayCategories] from current state.
+  /// Call whenever _refunds, filter fields, or _searchQuery changes.
+  void _rebuildDerived() {
+    // ── filtered list ────────────────────────────────────────────────────────
     List<RefundItem> list = _refunds;
 
-    // Apply card/category filter first (from Pending, Wait Time, or category bento)
     switch (_filterKind) {
       case _DashboardFilterKind.pending:
-        list = list.where((r) => r.status != RefundStatus.completed).toList();
-        break;
       case _DashboardFilterKind.waitTime:
         list = list.where((r) => r.status != RefundStatus.completed).toList();
         break;
@@ -198,7 +208,6 @@ class _DashboardScreenState extends State<DashboardScreen>
         break;
     }
 
-    // Then apply status chip filter (empty = show all)
     switch (_chipFilter) {
       case 'Processing':
         list = list.where((r) => r.status == RefundStatus.processing).toList();
@@ -220,7 +229,6 @@ class _DashboardScreenState extends State<DashboardScreen>
         break;
     }
 
-    // Apply search query filter last
     if (_searchQuery.isNotEmpty) {
       final q = _searchQuery.toLowerCase();
       list = list.where((r) =>
@@ -230,10 +238,9 @@ class _DashboardScreenState extends State<DashboardScreen>
       ).toList();
     }
 
-    return list;
-  }
+    _displayRefunds = list;
 
-  List<({RefundCategory category, double amount, bool pending, String currency, int count})> get _categories {
+    // ── categories ───────────────────────────────────────────────────────────
     final byCategory = <RefundCategory, ({double total, bool hasPending, Map<String, int> currencies, int count})>{
       for (final c in RefundCategory.values)
         c: (total: 0, hasPending: false, currencies: {}, count: 0),
@@ -250,7 +257,7 @@ class _DashboardScreenState extends State<DashboardScreen>
         count: cur.count + 1,
       );
     }
-    return byCategory.entries.map((e) {
+    _displayCategories = byCategory.entries.map((e) {
       final cmap = e.value.currencies;
       final dominant = cmap.isEmpty
           ? '₹'
@@ -286,6 +293,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _entranceCtrl.dispose();
     _countCtrl.dispose();
     _searchCtrl.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -335,6 +343,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     if (!mounted) return;
     setState(() {
       _refunds = updated;
+      _rebuildDerived();
       // Restart entrance animation so remaining tiles re-stagger
       _entranceCtrl.forward(from: 0);
     });
@@ -398,6 +407,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       _countTo   = newAmount;
       _refunds   = list;
       _loading   = false;
+      _rebuildDerived();
     });
     _entranceCtrl.forward(from: 0);
     _countCtrl.forward(from: 0);
@@ -408,6 +418,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _quickSync() async {
+    if (_syncing) return; // guard against rapid double-tap
     setState(() => _syncing = true);
     final prefs = await SharedPreferences.getInstance();
     var newCount = 0;
@@ -440,6 +451,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     setState(() {
       _refunds = merged;
       _syncing = false;
+      _rebuildDerived();
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -516,7 +528,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                     child: CircularProgressIndicator(color: AppColors.primary)),
                               ),
                             )
-                          else if (_filteredRefunds.isEmpty)
+                          else if (_displayRefunds.isEmpty)
                             SliverToBoxAdapter(
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -556,7 +568,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                               ),
                             )
                           else
-                            _filteredRefunds.length >= 4 && context.isTablet
+                            _displayRefunds.length >= 4 && context.isTablet
                                 ? SliverPadding(
                                     padding: EdgeInsets.symmetric(horizontal: context.hPad),
                                     sliver: SliverGrid(
@@ -569,20 +581,21 @@ class _DashboardScreenState extends State<DashboardScreen>
                                       ),
                                       delegate: SliverChildBuilderDelegate(
                                         (_, i) {
-                                          final item = _filteredRefunds[i];
+                                          final item = _displayRefunds[i];
                                           return _buildDismissible(context, item, i);
                                         },
-                                        childCount: _filteredRefunds.length,
+                                        childCount: _displayRefunds.length,
                                       ),
                                     ),
                                   )
                                 : SliverList(
                                     delegate: SliverChildBuilderDelegate(
                                       (_, i) {
-                                        final item = _filteredRefunds[i];
+                                        final item = _displayRefunds[i];
                                         return _buildDismissible(context, item, i);
+
                                       },
-                                      childCount: _filteredRefunds.length,
+                                      childCount: _displayRefunds.length,
                                     ),
                                   ),
                           const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -723,7 +736,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                       key: const ValueKey('search_field'),
                       controller: _searchCtrl,
                       autofocus: true,
-                      onChanged: (v) => setState(() => _searchQuery = v),
+                      onChanged: (v) {
+                        _searchDebounce?.cancel();
+                        _searchDebounce = Timer(
+                          const Duration(milliseconds: 250),
+                          () => setState(() {
+                            _searchQuery = v;
+                            _rebuildDerived();
+                          }),
+                        );
+                      },
                       decoration: InputDecoration(
                         hintText: 'Search merchant or order ID…',
                         prefixIcon: const Icon(Icons.search, size: 20),
@@ -778,8 +800,10 @@ class _DashboardScreenState extends State<DashboardScreen>
               setState(() {
                 _searching = !_searching;
                 if (!_searching) {
+                  _searchDebounce?.cancel();
                   _searchCtrl.clear();
                   _searchQuery = '';
+                  _rebuildDerived();
                 }
               });
             },
@@ -906,6 +930,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   onTap: () => setState(() {
                     _filterKind = _DashboardFilterKind.pending;
                     _filterCategory = null;
+                    _rebuildDerived();
                   }),
                 ),
               ),
@@ -918,6 +943,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                   onTap: () => setState(() {
                     _filterKind = _DashboardFilterKind.waitTime;
                     _filterCategory = null;
+                    _rebuildDerived();
                   }),
                 ),
               ),
@@ -953,7 +979,7 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildCategoriesGrid(BuildContext context, double contentWidth) {
-    final cats = _categories;
+    final cats = _displayCategories;
     double amountFor(RefundCategory c) =>
         cats.where((x) => x.category == c).firstOrNull?.amount ?? 0;
     bool pendingFor(RefundCategory c) =>
@@ -965,6 +991,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     void onCategoryTap(RefundCategory c) => setState(() {
           _filterKind = _DashboardFilterKind.category;
           _filterCategory = c;
+          _rebuildDerived();
         });
 
     final categories = [
@@ -1097,9 +1124,10 @@ class _DashboardScreenState extends State<DashboardScreen>
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
               // Toggle: tap active chip to deselect; tap inactive chip to select
-              onTap: () => setState(
-                () => _chipFilter = selected ? '' : c.label,
-              ),
+              onTap: () => setState(() {
+                _chipFilter = selected ? '' : c.label;
+                _rebuildDerived();
+              }),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

@@ -9,4 +9,4 @@
     android:initialLayout="@layout/refundoo_widget"
     android:widgetCategory="home_screen"
     android:resizeMode="horizontal|vertical"
-    android:description="@string/app_name"/>
+    android:description="@string/widget_description"/>

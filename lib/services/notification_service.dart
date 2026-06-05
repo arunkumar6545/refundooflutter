@@ -28,8 +28,8 @@ class NotificationService {
     // Set tz.local to the device's actual timezone so zonedSchedule fires
     // at the right local time on both Android and iOS (defaults to UTC otherwise).
     try {
-      final deviceTz = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(deviceTz));
+      final tzInfo = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(tzInfo.identifier));
     } catch (_) {
       // Fall back to UTC if timezone lookup fails — better than crashing.
     }
@@ -42,7 +42,7 @@ class NotificationService {
     );
 
     await _plugin.initialize(
-      const InitializationSettings(android: android, iOS: ios),
+      settings: const InitializationSettings(android: android, iOS: ios),
     );
 
     // Request permission on iOS
@@ -80,17 +80,17 @@ class NotificationService {
 
     // Cancel previous overdue notifications
     for (var i = 0; i < _kMaxOverdue; i++) {
-      await _plugin.cancel(_kOverdueBase + i);
+      await _plugin.cancel(id: _kOverdueBase + i);
     }
 
     for (var i = 0; i < overdue.length; i++) {
       final r = overdue[i];
       await _plugin.show(
-        _kOverdueBase + i,
-        'Refund overdue',
-        'Your ${r.formattedAmount} ${r.merchantName} refund is '
+        id: _kOverdueBase + i,
+        title: 'Refund overdue',
+        body: 'Your ${r.formattedAmount} ${r.merchantName} refund is '
             '${r.overdueDays} day${r.overdueDays == 1 ? '' : 's'} overdue.',
-        _details(),
+        notificationDetails: _details(),
       );
     }
   }
@@ -101,7 +101,7 @@ class NotificationService {
   static Future<void> scheduleDailyReminder() async {
     if (!await _enabled()) return;
     await _ensureInit();
-    await _plugin.cancel(_kDailyId);
+    await _plugin.cancel(id: _kDailyId);
 
     final now  = tz.TZDateTime.now(tz.local);
     var scheduled = tz.TZDateTime(
@@ -111,14 +111,12 @@ class NotificationService {
     }
 
     await _plugin.zonedSchedule(
-      _kDailyId,
-      'Refundoo',
-      'Check your pending refunds — some may be overdue.',
-      scheduled,
-      _details(),
+      id: _kDailyId,
+      title: 'Refundoo',
+      body: 'Check your pending refunds — some may be overdue.',
+      scheduledDate: scheduled,
+      notificationDetails: _details(),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.time,
     );
   }

@@ -94,6 +94,20 @@ workflows:
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12\.0/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' \
             ios/Runner.xcodeproj/project.pbxproj
 
+      - name: Generate iOS app icons
+        script: |
+          # flutter create just created ios/Runner/Assets.xcassets — now we can
+          # generate proper icons from the same app_logo.png used for Android.
+          cat > /tmp/fli_ios.yaml <<'YAML_EOF'
+          flutter_launcher_icons:
+            android: false
+            ios: true
+            image_path: "assets/images/app_logo.png"
+            remove_alpha_ios: true
+            background_color_ios: "#0A1628"
+          YAML_EOF
+          dart run flutter_launcher_icons --overwrite -f /tmp/fli_ios.yaml
+
       - name: Apply Info.plist customisations
         script: |
           PLIST=ios/Runner/Info.plist
@@ -177,6 +191,18 @@ workflows:
             ios/Runner.xcodeproj/project.pbxproj
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12\.0/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' \
             ios/Runner.xcodeproj/project.pbxproj
+
+      - name: Generate iOS app icons
+        script: |
+          cat > /tmp/fli_ios.yaml <<'YAML_EOF'
+          flutter_launcher_icons:
+            android: false
+            ios: true
+            image_path: "assets/images/app_logo.png"
+            remove_alpha_ios: true
+            background_color_ios: "#0A1628"
+          YAML_EOF
+          dart run flutter_launcher_icons --overwrite -f /tmp/fli_ios.yaml
 
       - name: Apply Info.plist customisations
         script: |
