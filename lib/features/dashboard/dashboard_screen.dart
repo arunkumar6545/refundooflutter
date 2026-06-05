@@ -1109,8 +1109,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      clipBehavior: Clip.none,
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: chips.map((c) {
           final selected      = c.label == _chipFilter;
           final isDark        = Theme.of(context).brightness == Brightness.dark;
@@ -1130,7 +1132,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               }),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                 decoration: BoxDecoration(
                   color: selected
                       ? c.bg
@@ -1147,6 +1149,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // Coloured dot — always shown (not just when selected)
                     Container(
@@ -1165,6 +1168,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
+                        height: 1.0,
                         color: selected
                             ? c.color
                             : (isOverdueChip && overdueCount > 0
@@ -1241,8 +1245,8 @@ class _FilterChipsDelegate extends SliverPersistentHeaderDelegate {
 
   final Widget child;
 
-  // Chip height (≈32px) + 12px top + 12px bottom
-  static const double _height = 56.0;
+  // Chip height (≈34px) + 12px top + 12px bottom
+  static const double _height = 58.0;
 
   @override
   double get minExtent => _height;

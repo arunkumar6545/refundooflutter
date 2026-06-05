@@ -15,6 +15,10 @@ const _kDailyId = 9000;
 const _kOverdueBase = 1000;
 const _kMaxOverdue = 10; // cap so we don't spam
 
+/// SharedPreferences key storing the last date overdue alerts were sent
+/// (ISO-8601 date string, e.g. "2026-06-06").
+const _kLastOverdueDate = 'notif_last_overdue_date';
+
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialised = false;
@@ -67,10 +71,22 @@ class NotificationService {
   // ── Overdue refund notifications ──────────────────────────────────────────
 
   /// Fires one notification per overdue refund (max 10).
-  /// Only fires if the user has not disabled notifications.
+  ///
+  /// Runs **at most once per calendar day** — the date of the last send is
+  /// stored in SharedPreferences so repeated app launches on the same day are
+  /// silently skipped.
   static Future<void> scheduleOverdueReminder(
       List<RefundItem> refunds) async {
     if (!await _enabled()) return;
+
+    // Once-per-day guard: skip if we already sent overdue alerts today.
+    final prefs = await SharedPreferences.getInstance();
+    final today = DateTime.now();
+    final todayStr =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    final lastSent = prefs.getString(_kLastOverdueDate) ?? '';
+    if (lastSent == todayStr) return;
+
     await _ensureInit();
 
     final overdue = refunds
@@ -78,10 +94,12 @@ class NotificationService {
         .take(_kMaxOverdue)
         .toList();
 
-    // Cancel previous overdue notifications
+    // Cancel stale overdue notifications before posting fresh ones.
     for (var i = 0; i < _kMaxOverdue; i++) {
       await _plugin.cancel(id: _kOverdueBase + i);
     }
+
+    if (overdue.isEmpty) return;
 
     for (var i = 0; i < overdue.length; i++) {
       final r = overdue[i];
@@ -93,6 +111,9 @@ class NotificationService {
         notificationDetails: _details(),
       );
     }
+
+    // Record the date so we don't fire again until tomorrow.
+    await prefs.setString(_kLastOverdueDate, todayStr);
   }
 
   // ── Daily 9 AM reminder ───────────────────────────────────────────────────
