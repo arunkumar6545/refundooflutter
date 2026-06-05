@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app/app.dart';
+import 'services/ad_service.dart';
 import 'services/notification_service.dart';
 
 /// Global theme mode notifier — updated by ProfileScreen, consumed by app.dart.
@@ -24,5 +25,6 @@ void main() async {
   themeModeNotifier.value = _parseThemeMode(prefs.getString('theme_mode'));
   await NotificationService.init();
   unawaited(NotificationService.scheduleDailyReminder());
+  unawaited(AdService.instance.initialize()); // preload interstitial in background
   runApp(const RefundooApp());
 }

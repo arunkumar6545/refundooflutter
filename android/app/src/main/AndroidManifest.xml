@@ -35,6 +35,18 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!--
+            AdMob App ID.
+            TODO: Replace the value below with your real AdMob Android App ID
+                  (format: ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX) from
+                  https://apps.admob.com once your app is registered.
+                  The value below is Google's official test App ID — safe for
+                  development but must be replaced before going live.
+        -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713"/>
+
         <!-- Home screen widget -->
         <receiver
             android:exported="true"

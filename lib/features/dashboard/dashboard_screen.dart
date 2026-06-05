@@ -14,6 +14,8 @@ import '../../services/refund_storage_service.dart';
 import '../../services/sms_scanner_service.dart';
 import '../../services/email_scanner_service.dart';
 import '../../services/auth_service.dart';
+import '../../core/widgets/banner_ad_widget.dart';
+import '../../services/ad_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/widget_service.dart';
 
@@ -401,6 +403,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     _countCtrl.forward(from: 0);
     unawaited(NotificationService.scheduleOverdueReminder(_refunds));
     unawaited(WidgetService.update(_refunds));
+    // Show the launch interstitial once per session after first data load.
+    AdService.instance.showSessionInterstitial();
   }
 
   Future<void> _quickSync() async {
@@ -477,7 +481,10 @@ class _DashboardScreenState extends State<DashboardScreen>
                     constraints.maxWidth - 72,
                     constraints.maxHeight - 80,
                   );
-                  return Stack(
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: Stack(
                     children: [
                       CustomScrollView(
                         controller: _scrollCtrl,
@@ -603,6 +610,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                           ),
                         ),
                       ),
+                    ],
+                        ),
+                      ),
+                      // ── Banner ad (bottom of screen) ─────────────────────
+                      const BannerAdWidget(),
                     ],
                   );
                 },

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/responsive.dart';
 import '../../core/widgets/app_drawer.dart';
+import '../../core/widgets/banner_ad_widget.dart';
 import '../../models/refund_item.dart';
 import '../../services/refund_storage_service.dart';
 
@@ -102,12 +103,19 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary))
-          : _completed.isEmpty
-              ? _buildEmpty(context)
-              : _buildContent(context),
+      body: Column(
+        children: [
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.primary))
+                : _completed.isEmpty
+                    ? _buildEmpty(context)
+                    : _buildContent(context),
+          ),
+          const BannerAdWidget(),
+        ],
+      ),
     );
   }
 
