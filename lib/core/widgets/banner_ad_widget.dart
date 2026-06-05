@@ -22,6 +22,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   @override
   void initState() {
     super.initState();
+    if (!AdService.adsEnabled) return; // master switch off — skip load
     _ad = AdService.instance.createBannerAd(
       listener: BannerAdListener(
         onAdLoaded: (_) {

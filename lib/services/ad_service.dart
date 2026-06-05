@@ -20,6 +20,15 @@ class AdService {
 
   bool _initialized = false;
 
+  // ── Master switch ────────────────────────────────────────────────────────
+  // Set to `true` once your AdMob account is approved and real ad unit IDs
+  // are filled in below. While `false` the SDK still initialises but no ad
+  // requests are made — zero ads shown on any screen.
+  static const bool _adsEnabled = false;
+
+  /// Public read-only access to the master switch.
+  static bool get adsEnabled => _adsEnabled;
+
   // ── Mode switch ─────────────────────────────────────────────────────────
   // Flip to `false` once you have filled in your real ad unit IDs below
   // and your AdMob account is approved.
@@ -61,7 +70,7 @@ class AdService {
     if (_initialized) return;
     await MobileAds.instance.initialize();
     _initialized = true;
-    _loadInterstitial();
+    if (_adsEnabled) _loadInterstitial();
   }
 
   // ── Interstitial ─────────────────────────────────────────────────────────
@@ -92,6 +101,7 @@ class AdService {
   /// Shows the launch interstitial **once per app session**.
   /// Call after the first content frame is ready (e.g. after _loadRefunds).
   void showSessionInterstitial() {
+    if (!_adsEnabled) return;
     if (premiumNotifier.value) return; // Premium users skip all ads.
     if (_sessionInterstitialShown) return;
     if (_interstitial == null) return;
