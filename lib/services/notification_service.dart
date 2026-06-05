@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -23,6 +24,15 @@ class NotificationService {
   static Future<void> init() async {
     if (_initialised) return;
     tz.initializeTimeZones();
+
+    // Set tz.local to the device's actual timezone so zonedSchedule fires
+    // at the right local time on both Android and iOS (defaults to UTC otherwise).
+    try {
+      final deviceTz = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(deviceTz));
+    } catch (_) {
+      // Fall back to UTC if timezone lookup fails — better than crashing.
+    }
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const ios     = DarwinInitializationSettings(
