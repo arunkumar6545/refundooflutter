@@ -450,7 +450,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                           SliverToBoxAdapter(child: _buildStatsRow(context)),
                           SliverToBoxAdapter(
                               child: _buildSectionHeader(context, 'Refund Categories', 'View all')),
-                          SliverToBoxAdapter(child: _buildCategoriesGrid(context, constraints.maxWidth)),
+                          SliverToBoxAdapter(child: _buildCategoriesTreemap(context, constraints.maxWidth)),
                           SliverToBoxAdapter(
                               child: KeyedSubtree(
                                 key: _recentActivityKey,
@@ -922,7 +922,10 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  Widget _buildCategoriesGrid(BuildContext context, double contentWidth) {
+  /// Squarified treemap: all 6 categories fill a square, area ∝ pending amount.
+  /// Zero-amount categories get a minimum 10 % of the largest amount so they
+  /// are still legible.
+  Widget _buildCategoriesTreemap(BuildContext context, double contentWidth) {
     final cats = _displayCategories;
     double amountFor(RefundCategory c) =>
         cats.where((x) => x.category == c).firstOrNull?.amount ?? 0;
@@ -932,10 +935,8 @@ class _DashboardScreenState extends State<DashboardScreen>
         cats.where((x) => x.category == c).firstOrNull?.currency ?? '₹';
     int countFor(RefundCategory c) =>
         cats.where((x) => x.category == c).firstOrNull?.count ?? 0;
-    void onCategoryTap(RefundCategory c) =>
-        context.push('/category/${c.name}');
 
-    final categories = [
+    const categories = [
       RefundCategory.travel,
       RefundCategory.retail,
       RefundCategory.services,
@@ -944,46 +945,64 @@ class _DashboardScreenState extends State<DashboardScreen>
       RefundCategory.entertainment,
     ];
 
-    // Adaptive column count based on available width
-    final cols = contentWidth >= kExpandedBreak ? 4
-               : contentWidth >= kCompactBreak  ? 3
-               : 2;
-    final hPad = context.hPad;
+    // Minimum layout weight keeps empty categories visible.
+    final amounts  = categories.map(amountFor);
+    final maxAmt   = amounts.fold(0.0, (a, b) => b > a ? b : a);
+    final minVal   = maxAmt > 0 ? maxAmt * 0.10 : 1.0;
 
-    final rows = <Widget>[];
-    for (var i = 0; i < categories.length; i += cols) {
-      final rowCats = categories.skip(i).take(cols).toList();
-      // Pad row to full cols so widths are even
-      while (rowCats.length < cols) rowCats.add(rowCats.last); // placeholder fill handled below
-
-      rows.add(
-        Row(
-          children: [
-            for (var j = 0; j < cols; j++) ...[
-              if (j > 0) const SizedBox(width: 12),
-              Expanded(
-                child: j < rowCats.length && i + j < categories.length
-                    ? _CategoryBento(
-                        category: rowCats[j],
-                        amount: amountFor(rowCats[j]),
-                        count: countFor(rowCats[j]),
-                        pending: pendingFor(rowCats[j]),
-                        currencySymbol: currencyFor(rowCats[j]),
-                        onTap: () => onCategoryTap(rowCats[j]),
-                        index: i * cols + j,
-                      )
-                    : const SizedBox.shrink(),
-              ),
-            ],
-          ],
-        ),
+    final items = categories.asMap().entries.map((e) {
+      final amt = amountFor(e.value);
+      return _TMapItem(
+        category:       e.value,
+        value:          amt > 0 ? amt : minVal,
+        amount:         amt,
+        count:          countFor(e.value),
+        pending:        pendingFor(e.value),
+        currencySymbol: currencyFor(e.value),
       );
-      if (i + cols < categories.length) rows.add(const SizedBox(height: 12));
-    }
+    }).toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final hPad     = context.hPad;
+    final side     = contentWidth - 2 * hPad;
+    final totalVal = items.fold(0.0, (s, e) => s + e.value);
+    _squarify(items, Rect.fromLTWH(0, 0, side, side), totalVal);
+
+    const gap = 5.0;
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: hPad),
-      child: Column(children: rows),
+      child: SizedBox(
+        width:  side,
+        height: side,
+        child: Stack(
+          children: items.asMap().entries.map((entry) {
+            final idx  = entry.key;
+            final item = entry.value;
+            final r = Rect.fromLTRB(
+              item.rect.left   + gap / 2,
+              item.rect.top    + gap / 2,
+              item.rect.right  - gap / 2,
+              item.rect.bottom - gap / 2,
+            );
+            return Positioned(
+              left:   r.left,
+              top:    r.top,
+              width:  r.width,
+              height: r.height,
+              child: _CategoryBento(
+                category:       item.category,
+                amount:         item.amount,
+                count:          item.count,
+                pending:        item.pending,
+                currencySymbol: item.currencySymbol,
+                index:          idx,
+                onTap: () => context.push('/category/${item.category.name}'),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
     );
   }
 
@@ -1284,6 +1303,91 @@ class _BentoCard extends StatelessWidget {
 }
 
 // Three large background icons give each card a "photo-like" illustrated feel.
+// ── Treemap layout ────────────────────────────────────────────────────────────
+
+class _TMapItem {
+  _TMapItem({
+    required this.category,
+    required this.value,
+    required this.amount,
+    required this.count,
+    required this.pending,
+    required this.currencySymbol,
+  });
+
+  final RefundCategory category;
+  final double value;          // layout weight (>= minValue)
+  final double amount;         // raw display amount (may be 0)
+  final int count;
+  final bool pending;
+  final String currencySymbol;
+  Rect rect = Rect.zero;       // filled by _squarify
+}
+
+/// Squarified treemap: places [items] (sorted desc by value) into [bounds],
+/// minimising worst cell aspect-ratio. Fills [_TMapItem.rect] in-place.
+void _squarify(List<_TMapItem> items, Rect bounds, double remaining) {
+  if (items.isEmpty) return;
+  if (items.length == 1) { items[0].rect = bounds; return; }
+
+  final w    = bounds.width;
+  final h    = bounds.height;
+  final wide = w >= h;
+
+  var rowSum   = 0.0;
+  var rowCount = 0;
+  var prevWorst = double.infinity;
+
+  for (var i = 0; i < items.length; i++) {
+    final cand     = rowSum + items[i].value;
+    final frac     = cand / remaining;
+    final stripDim = (wide ? w : h) * frac;
+    final crossDim = wide ? h : w;
+
+    var worst = 0.0;
+    for (var j = 0; j <= i; j++) {
+      final itemFrac = items[j].value / cand;
+      final itemDim  = crossDim * itemFrac;
+      final r        = stripDim > itemDim ? stripDim / itemDim : itemDim / stripDim;
+      if (r > worst) worst = r;
+    }
+
+    if (i == 0 || worst <= prevWorst) {
+      rowSum    = cand;
+      rowCount  = i + 1;
+      prevWorst = worst;
+    } else {
+      break;
+    }
+  }
+
+  // Place committed row.
+  final frac     = rowSum / remaining;
+  final stripDim = (wide ? w : h) * frac;
+  final crossDim = wide ? h : w;
+
+  var offset = 0.0;
+  for (var i = 0; i < rowCount; i++) {
+    final itemFrac = items[i].value / rowSum;
+    final itemDim  = crossDim * itemFrac;
+    items[i].rect  = wide
+        ? Rect.fromLTWH(bounds.left, bounds.top + offset, stripDim, itemDim)
+        : Rect.fromLTWH(bounds.left + offset, bounds.top, itemDim, stripDim);
+    offset += itemDim;
+  }
+
+  // Recurse for the rest.
+  final rest = items.skip(rowCount).toList();
+  if (rest.isNotEmpty) {
+    final nb = wide
+        ? Rect.fromLTWH(bounds.left + stripDim, bounds.top, w - stripDim, h)
+        : Rect.fromLTWH(bounds.left, bounds.top + stripDim, w, h - stripDim);
+    _squarify(rest, nb, remaining - rowSum);
+  }
+}
+
+// ── Decorative background icons per category ──────────────────────────────────
+
 const _categoryBgIcons = <RefundCategory, List<IconData>>{
   RefundCategory.travel:        [Icons.flight_takeoff, Icons.luggage, Icons.travel_explore],
   RefundCategory.retail:        [Icons.local_mall, Icons.shopping_bag, Icons.storefront],
@@ -1363,145 +1467,162 @@ class _CategoryBentoState extends State<_CategoryBento>
       child: ScaleTransition(
         scale: _scaleAnim,
         child: GestureDetector(
-          onTapDown:  (_) => setState(() => _pressed = true),
-          onTapUp:    (_) { setState(() => _pressed = false); widget.onTap?.call(); },
-          onTapCancel: () => setState(() => _pressed = false),
+          onTapDown:   (_) => setState(() => _pressed = true),
+          onTapUp:     (_) { setState(() => _pressed = false); widget.onTap?.call(); },
+          onTapCancel: ()  => setState(() => _pressed = false),
           child: AnimatedScale(
             scale: _pressed ? 0.94 : 1.0,
             duration: const Duration(milliseconds: 110),
             curve: Curves.easeOut,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                gradient: gradient,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: _pressed ? 0.08 : 0.18),
-                    blurRadius: _pressed ? 6 : 16,
-                    offset: Offset(0, _pressed ? 2 : 5),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: Stack(
-                  children: [
-                    // Static decorative background icons — no animation.
-                    if (bgIcons.isNotEmpty)
-                      Positioned(
-                        right: -14, top: -14,
-                        child: Icon(bgIcons[0], size: 88,
-                            color: Colors.white.withValues(alpha: 0.13)),
-                      ),
-                    if (bgIcons.length > 1)
-                      Positioned(
-                        left: -10, bottom: -8,
-                        child: Icon(bgIcons[1], size: 56,
-                            color: Colors.white.withValues(alpha: 0.09)),
-                      ),
-                    if (bgIcons.length > 2)
-                      Positioned(
-                        right: 18, bottom: 24,
-                        child: Icon(bgIcons[2], size: 30,
-                            color: Colors.white.withValues(alpha: 0.10)),
-                      ),
-                    // Bottom scrim for text readability.
-                    Positioned(
-                      left: 0, right: 0, bottom: 0, height: 56,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withValues(alpha: 0.0),
-                              Colors.black.withValues(alpha: 0.28),
+            // LayoutBuilder lets us adapt content to whatever size the treemap
+            // allocates for this category cell.
+            child: LayoutBuilder(builder: (context, constraints) {
+              final w     = constraints.maxWidth;
+              final h     = constraints.maxHeight;
+              // Thresholds for progressive content reveal.
+              final tiny  = w < 70  || h < 70;   // icon only
+              final small = w < 110 || h < 110;  // icon + name, no amount
+              final pad   = tiny ? 7.0 : 12.0;
+              final br    = tiny ? 10.0 : 14.0;
+              final iconSz = tiny ? 14.0 : 18.0;
+              final badgePad = tiny ? 5.0 : 7.0;
+              final bgIconSz = small ? 52.0 : 78.0;
+
+              return Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(br),
+                  gradient: gradient,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: _pressed ? 0.06 : 0.16),
+                      blurRadius: _pressed ? 4 : 12,
+                      offset: Offset(0, _pressed ? 1 : 4),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(br),
+                  child: Stack(
+                    children: [
+                      // Decorative background icons (hidden in tiny cells).
+                      if (!tiny && bgIcons.isNotEmpty)
+                        Positioned(
+                          right: -10, top: -10,
+                          child: Icon(bgIcons[0], size: bgIconSz,
+                              color: Colors.white.withValues(alpha: 0.13)),
+                        ),
+                      if (!tiny && bgIcons.length > 1)
+                        Positioned(
+                          left: -8, bottom: -6,
+                          child: Icon(bgIcons[1], size: bgIconSz * 0.65,
+                              color: Colors.white.withValues(alpha: 0.09)),
+                        ),
+                      // Bottom scrim for text legibility.
+                      if (!tiny)
+                        Positioned(
+                          left: 0, right: 0, bottom: 0, height: 44,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.0),
+                                  Colors.black.withValues(alpha: 0.26),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      // Foreground — also sizes the Stack's intrinsic height.
+                      Positioned.fill(
+                        child: Padding(
+                          padding: EdgeInsets.all(pad),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Icon badge — always shown.
+                              Container(
+                                padding: EdgeInsets.all(badgePad),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.22),
+                                  borderRadius: BorderRadius.circular(br * 0.65),
+                                ),
+                                child: Icon(iconForCategory(widget.category),
+                                    color: Colors.white, size: iconSz),
+                              ),
+                              // Category name — hidden in tiny cells.
+                              if (!tiny) ...[
+                                SizedBox(height: small ? 5 : 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        widget.category.label,
+                                        maxLines: small ? 1 : 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: small ? 10 : 12,
+                                          fontWeight: FontWeight.w700,
+                                          height: 1.0,
+                                        ),
+                                      ),
+                                    ),
+                                    if (widget.count > 0 && !small)
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.25),
+                                          borderRadius: BorderRadius.circular(20),
+                                        ),
+                                        child: Text('${widget.count}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w800,
+                                            height: 1.0,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                // Amount — only on non-small cells.
+                                if (!small) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    widget.amount > 0
+                                        ? (widget.pending
+                                            ? '${widget.currencySymbol}'
+                                              '${widget.amount.toStringAsFixed(0)} pending'
+                                            : '${widget.currencySymbol}'
+                                              '${widget.amount.toStringAsFixed(0)}')
+                                        : 'No refunds',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.80),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ],
                           ),
                         ),
                       ),
-                    ),
-                    // Foreground content — sizes the Stack.
-                    Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(7),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.22),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              iconForCategory(widget.category),
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  widget.category.label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    height: 1.0,
-                                  ),
-                                ),
-                              ),
-                              if (widget.count > 0)
-                                Container(
-                                  margin: const EdgeInsets.only(left: 4),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.25),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    '${widget.count}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w800,
-                                      height: 1.0,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            widget.amount > 0
-                                ? (widget.pending
-                                    ? '${widget.currencySymbol}${widget.amount.toStringAsFixed(2)} pending'
-                                    : '${widget.currencySymbol}${widget.amount.toStringAsFixed(2)}')
-                                : 'No refunds',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.80),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              height: 1.0,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            }),
           ),
         ),
       ),
