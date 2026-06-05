@@ -1387,74 +1387,37 @@ class _CategoryBento extends StatefulWidget {
 }
 
 class _CategoryBentoState extends State<_CategoryBento>
-    with TickerProviderStateMixin {
-  // Entrance: scale up + fade in, staggered by card index
+    with SingleTickerProviderStateMixin {
+  // One-time entrance: fade + scale-up on first appearance.
   late final AnimationController _entranceCtrl;
   late final Animation<double> _scaleAnim;
   late final Animation<double> _fadeAnim;
-
-  // Pending pulse: soft glow on the icon badge when refunds are waiting
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _pulseAnim;
-
-  // Background icon slow drift
-  late final AnimationController _driftCtrl;
 
   bool _pressed = false;
 
   @override
   void initState() {
     super.initState();
-
     _entranceCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 550),
+      duration: const Duration(milliseconds: 450),
     );
-    _scaleAnim = Tween<double>(begin: 0.72, end: 1.0).animate(
-      CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOutBack),
+    _scaleAnim = Tween<double>(begin: 0.82, end: 1.0).animate(
+      CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOut),
     );
     _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOut),
     );
-
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    );
-    _pulseAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
-
-    _driftCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    );
-
-    // Staggered start: each card enters 90 ms after the previous one
-    Future.delayed(Duration(milliseconds: 80 + widget.index * 90), () {
+    // Stagger each card by 80 ms so they cascade in on load.
+    Future.delayed(Duration(milliseconds: widget.index * 80), () {
       if (!mounted) return;
       _entranceCtrl.forward();
-      _driftCtrl.repeat(reverse: true);
-      if (widget.pending) _pulseCtrl.repeat(reverse: true);
     });
-  }
-
-  @override
-  void didUpdateWidget(_CategoryBento old) {
-    super.didUpdateWidget(old);
-    if (widget.pending && !old.pending) {
-      _pulseCtrl.repeat(reverse: true);
-    } else if (!widget.pending && old.pending) {
-      _pulseCtrl.stop();
-      _pulseCtrl.reset();
-    }
   }
 
   @override
   void dispose() {
     _entranceCtrl.dispose();
-    _pulseCtrl.dispose();
-    _driftCtrl.dispose();
     super.dispose();
   }
 
@@ -1463,119 +1426,16 @@ class _CategoryBentoState extends State<_CategoryBento>
     final gradient = _categoryGradients[widget.category] ?? _genericGradient;
     final bgIcons  = _categoryBgIcons[widget.category] ?? [];
 
-    // Foreground content — cached so AnimatedBuilder doesn't rebuild it on
-    // every drift frame.
-    final content = Padding(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Icon badge with optional pending glow ring
-          AnimatedBuilder(
-            animation: _pulseAnim,
-            builder: (_, child) {
-              return Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (widget.pending)
-                    Container(
-                      width:  38 + _pulseAnim.value * 10,
-                      height: 38 + _pulseAnim.value * 10,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(
-                            alpha: 0.18 * (1 - _pulseAnim.value)),
-                      ),
-                    ),
-                  child!,
-                ],
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.22),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                _iconForCategory(widget.category),
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  widget.category.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    height: 1.0,
-                  ),
-                ),
-              ),
-              if (widget.count > 0)
-                Container(
-                  margin: const EdgeInsets.only(left: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.25),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${widget.count}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      height: 1.0,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 3),
-          Text(
-            widget.amount > 0
-                ? (widget.pending
-                    ? '${widget.currencySymbol}${widget.amount.toStringAsFixed(2)} pending'
-                    : '${widget.currencySymbol}${widget.amount.toStringAsFixed(2)}')
-                : 'No refunds',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.80),
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              height: 1.0,
-            ),
-          ),
-        ],
-      ),
-    );
-
     return FadeTransition(
       opacity: _fadeAnim,
       child: ScaleTransition(
         scale: _scaleAnim,
         child: GestureDetector(
-          onTapDown: (_) => setState(() => _pressed = true),
-          onTapUp: (_) {
-            setState(() => _pressed = false);
-            widget.onTap?.call();
-          },
+          onTapDown:  (_) => setState(() => _pressed = true),
+          onTapUp:    (_) { setState(() => _pressed = false); widget.onTap?.call(); },
           onTapCancel: () => setState(() => _pressed = false),
           child: AnimatedScale(
-            scale: _pressed ? 0.93 : 1.0,
+            scale: _pressed ? 0.94 : 1.0,
             duration: const Duration(milliseconds: 110),
             curve: Curves.easeOut,
             child: Container(
@@ -1590,64 +1450,123 @@ class _CategoryBentoState extends State<_CategoryBento>
                   ),
                 ],
               ),
-              // AnimatedBuilder wraps the whole Stack so Positioned icons are
-              // direct Stack children — avoids the zero-size inner-Stack bug.
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(18),
-                child: AnimatedBuilder(
-                  animation: _driftCtrl,
-                  builder: (context, child) {
-                    final t = _driftCtrl.value;
-                    return Stack(
-                      children: [
-                        // ── Background illustrated icons ───────────────────
-                        if (bgIcons.isNotEmpty)
-                          Positioned(
-                            right: -14 + t * 6,
-                            top:   -14 + t * 4,
-                            child: Icon(bgIcons[0],
-                                size: 88,
-                                color: Colors.white.withValues(alpha: 0.13)),
-                          ),
-                        if (bgIcons.length > 1)
-                          Positioned(
-                            left:   -10 - t * 4,
-                            bottom: -8  + t * 5,
-                            child: Icon(bgIcons[1],
-                                size: 56,
-                                color: Colors.white.withValues(alpha: 0.09)),
-                          ),
-                        if (bgIcons.length > 2)
-                          Positioned(
-                            right:  18 + t * 3,
-                            bottom: 24 - t * 2,
-                            child: Icon(bgIcons[2],
-                                size: 30,
-                                color: Colors.white.withValues(alpha: 0.10)),
-                          ),
-                        // ── Bottom scrim ───────────────────────────────────
-                        Positioned(
-                          left: 0, right: 0, bottom: 0,
-                          height: 56,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withValues(alpha: 0.0),
-                                  Colors.black.withValues(alpha: 0.28),
-                                ],
-                              ),
-                            ),
+                child: Stack(
+                  children: [
+                    // Static decorative background icons — no animation.
+                    if (bgIcons.isNotEmpty)
+                      Positioned(
+                        right: -14, top: -14,
+                        child: Icon(bgIcons[0], size: 88,
+                            color: Colors.white.withValues(alpha: 0.13)),
+                      ),
+                    if (bgIcons.length > 1)
+                      Positioned(
+                        left: -10, bottom: -8,
+                        child: Icon(bgIcons[1], size: 56,
+                            color: Colors.white.withValues(alpha: 0.09)),
+                      ),
+                    if (bgIcons.length > 2)
+                      Positioned(
+                        right: 18, bottom: 24,
+                        child: Icon(bgIcons[2], size: 30,
+                            color: Colors.white.withValues(alpha: 0.10)),
+                      ),
+                    // Bottom scrim for text readability.
+                    Positioned(
+                      left: 0, right: 0, bottom: 0, height: 56,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.0),
+                              Colors.black.withValues(alpha: 0.28),
+                            ],
                           ),
                         ),
-                        // ── Foreground content (sizes the Stack) ───────────
-                        child!,
-                      ],
-                    );
-                  },
-                  child: content,
+                      ),
+                    ),
+                    // Foreground content — sizes the Stack.
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.22),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              _iconForCategory(widget.category),
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  widget.category.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.0,
+                                  ),
+                                ),
+                              ),
+                              if (widget.count > 0)
+                                Container(
+                                  margin: const EdgeInsets.only(left: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    '${widget.count}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            widget.amount > 0
+                                ? (widget.pending
+                                    ? '${widget.currencySymbol}${widget.amount.toStringAsFixed(2)} pending'
+                                    : '${widget.currencySymbol}${widget.amount.toStringAsFixed(2)}')
+                                : 'No refunds',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.80),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              height: 1.0,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
