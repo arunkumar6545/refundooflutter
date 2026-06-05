@@ -85,11 +85,37 @@ workflows:
           # Podfile). Does NOT touch lib/ or existing Dart code.
           flutter create --platforms=ios --org com.refundoo --project-name refundoo .
 
+      - name: Set iOS deployment target to 14.0
+        script: |
+          # google_mobile_ads 5+ requires iOS 14.0 minimum.
+          # flutter create regenerates project.pbxproj with 13.0, so patch it here.
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 13\.0/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' \
+            ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12\.0/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' \
+            ios/Runner.xcodeproj/project.pbxproj
+
       - name: Apply Info.plist customisations
         script: |
           PLIST=ios/Runner/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Refundoo"  "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleName Refundoo"         "$PLIST"
+          # Helper: Add key if absent, else update it
+          plist_set() { /usr/libexec/PlistBuddy -c "Add :$1 string \"$2\"" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :$1 \"$2\"" "$PLIST"; }
+
+          plist_set CFBundleDisplayName "Refundoo"
+          plist_set CFBundleName        "Refundoo"
+
+          # Notifications permission description
+          plist_set NSUserNotificationsUsageDescription "Refundoo reminds you when a refund is overdue."
+
+          # AdMob — iOS App ID (replace with real ID when AdMob account is ready)
+          plist_set GADApplicationIdentifier "ca-app-pub-3940256099942544~1458002511"
+
+          # SKAdNetwork identifiers required for iOS ad attribution
+          /usr/libexec/PlistBuddy -c "Add :SKAdNetworkItems array"                                                  "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :SKAdNetworkItems:0 dict"                                                 "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :SKAdNetworkItems:0:SKAdNetworkIdentifier string cstr6suwn9.skadnetwork"  "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :SKAdNetworkItems:1 dict"                                                 "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :SKAdNetworkItems:1:SKAdNetworkIdentifier string 4fzdc2evr5.skadnetwork"  "$PLIST" 2>/dev/null || true
+
           /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 'Used to protect your refund data'" "$PLIST" 2>/dev/null || true
 
       - name: Build unsigned archive
@@ -141,17 +167,39 @@ workflows:
         script: |
           flutter create --platforms=ios --org com.refundoo --project-name refundoo .
 
-      - name: Set bundle identifier
+      - name: Set bundle identifier and iOS deployment target
         script: |
           BUNDLE_ID="com.refundoo.app"
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" \
+            ios/Runner.xcodeproj/project.pbxproj
+          # google_mobile_ads 5+ requires iOS 14.0 minimum
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 13\.0/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' \
+            ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12\.0/IPHONEOS_DEPLOYMENT_TARGET = 14.0/g' \
             ios/Runner.xcodeproj/project.pbxproj
 
       - name: Apply Info.plist customisations
         script: |
           PLIST=ios/Runner/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Refundoo"  "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleName Refundoo"         "$PLIST"
+          # Helper: Add key if absent, else update it
+          plist_set() { /usr/libexec/PlistBuddy -c "Add :$1 string \"$2\"" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :$1 \"$2\"" "$PLIST"; }
+
+          plist_set CFBundleDisplayName "Refundoo"
+          plist_set CFBundleName        "Refundoo"
+
+          # Notifications permission description
+          plist_set NSUserNotificationsUsageDescription "Refundoo reminds you when a refund is overdue."
+
+          # AdMob — iOS App ID (replace with real ID when AdMob account is ready)
+          plist_set GADApplicationIdentifier "ca-app-pub-3940256099942544~1458002511"
+
+          # SKAdNetwork identifiers required for iOS ad attribution
+          /usr/libexec/PlistBuddy -c "Add :SKAdNetworkItems array"                                                  "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :SKAdNetworkItems:0 dict"                                                 "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :SKAdNetworkItems:0:SKAdNetworkIdentifier string cstr6suwn9.skadnetwork"  "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :SKAdNetworkItems:1 dict"                                                 "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :SKAdNetworkItems:1:SKAdNetworkIdentifier string 4fzdc2evr5.skadnetwork"  "$PLIST" 2>/dev/null || true
+
           /usr/libexec/PlistBuddy -c "Add :NSFaceIDUsageDescription string 'Used to protect your refund data'" "$PLIST" 2>/dev/null || true
 
       - name: Build signed IPA
