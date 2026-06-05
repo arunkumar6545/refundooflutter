@@ -29,12 +29,13 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
 
   late final AnimationController _entranceCtrl;
 
-  // Must match RefundItem.statusLabel values exactly.
+  // Must match RefundItem.statusLabel values exactly (+ 'Overdue' is special).
   static const _chips = [
     'Processing',
     'Awaiting Confirmation',
     'Bank Processing',
     'Completed',
+    'Overdue',
   ];
 
   @override
@@ -68,6 +69,7 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
 
   List<RefundItem> get _filtered {
     if (_chipFilter == null) return _all;
+    if (_chipFilter == 'Overdue') return _all.where((r) => r.isOverdue).toList();
     return _all.where((r) => r.statusLabel == _chipFilter).toList();
   }
 
@@ -195,10 +197,11 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
       );
     }).where((r) => r.count > 0).toList();
 
-    final grandTotal   = _all.fold(0.0, (s, r) => s + r.amount);
-    final totalPending = _all
+    final grandTotal    = _all.fold(0.0, (s, r) => s + r.amount);
+    final totalPending  = _all
         .where((r) => r.status != RefundStatus.completed)
         .fold(0.0, (s, r) => s + r.amount);
+    final overdueCount  = _all.where((r) => r.isOverdue).length;
 
     final fmt = NumberFormat('#,##0.00', 'en_IN');
     const sym = '₹';
@@ -222,24 +225,57 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
                   ),
                 ),
                 const Spacer(),
-                if (totalPending > 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.20),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '$sym${fmt.format(totalPending)} pending',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        height: 1.0,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (overdueCount > 0) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFB91C1C).withValues(alpha: 0.30),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.warning_amber_rounded,
+                                size: 11, color: Colors.white),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$overdueCount overdue',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                height: 1.0,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
+                      const SizedBox(width: 6),
+                    ],
+                    if (totalPending > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.20),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '$sym${fmt.format(totalPending)} pending',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            height: 1.0,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -703,6 +739,8 @@ class _RefundTileState extends State<_RefundTile> {
                           children: [
                             Text(
                               item.merchantName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: Theme.of(context)
                                   .textTheme
                                   .titleSmall
@@ -717,6 +755,44 @@ class _RefundTileState extends State<_RefundTile> {
                                       ?.copyWith(
                                           color: Colors.grey.shade500,
                                           fontSize: 11)),
+                            ],
+                            // Overdue warning — matches dashboard tile.
+                            if (item.isOverdue) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.warning_amber_rounded,
+                                      size: 12, color: Color(0xFFB91C1C)),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    '${item.overdueDays} day${item.overdueDays == 1 ? '' : 's'} overdue',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFFB91C1C),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ] else if (item.status != RefundStatus.completed &&
+                                item.expectedByDate != null) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.schedule_outlined,
+                                      size: 11, color: AppColors.textMuted),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'Expected by ${_fmtDate(item.expectedByDate!)}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
                           ],
                         ),
