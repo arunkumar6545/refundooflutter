@@ -12,6 +12,64 @@ import '../../services/auth_service.dart';
 
 final GlobalKey<NavigatorState> _rootKey = GlobalKey<NavigatorState>();
 
+// Slide-from-right + fade transition used on every route push.
+CustomTransitionPage<T> _slidePage<T>({
+  required BuildContext context,
+  required GoRouterState state,
+  required Widget child,
+}) {
+  return CustomTransitionPage<T>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 300),
+    reverseTransitionDuration: const Duration(milliseconds: 250),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      // Push: slide in from right + fade in
+      final slide = Tween<Offset>(
+        begin: const Offset(0.08, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic));
+
+      // Pop: outgoing screen slides slightly left and fades
+      final secondarySlide = Tween<Offset>(
+        begin: Offset.zero,
+        end: const Offset(-0.04, 0),
+      ).animate(
+          CurvedAnimation(parent: secondaryAnimation, curve: Curves.easeInCubic));
+
+      return SlideTransition(
+        position: secondarySlide,
+        child: SlideTransition(
+          position: slide,
+          child: FadeTransition(
+            opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+            child: child,
+          ),
+        ),
+      );
+    },
+  );
+}
+
+// Fade-only transition — used for the splash and login so the first boot
+// doesn't feel like the app is sliding in from nowhere.
+CustomTransitionPage<T> _fadePage<T>({
+  required BuildContext context,
+  required GoRouterState state,
+  required Widget child,
+}) {
+  return CustomTransitionPage<T>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 400),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          child: child,
+        ),
+  );
+}
+
 GoRouter createAppRouter() {
   final auth = AuthService();
   return GoRouter(
@@ -20,46 +78,55 @@ GoRouter createAppRouter() {
     redirect: (context, state) {
       final isLoginRoute = state.matchedLocation == '/login';
       final isSplash = state.matchedLocation == '/';
-      // Let splash and login through unconditionally
       if (isSplash || isLoginRoute) return null;
-      // Guard everything else
       if (!auth.isSignedIn) return '/login';
       return null;
     },
     routes: [
       GoRoute(
         path: '/',
-        builder: (_, __) => const SplashScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(context: context, state: state, child: const SplashScreen()),
       ),
       GoRoute(
         path: '/login',
-        builder: (_, __) => const LoginScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(context: context, state: state, child: const LoginScreen()),
       ),
       GoRoute(
         path: '/permissions',
-        builder: (_, __) => const SyncPermissionsScreen(),
+        pageBuilder: (context, state) =>
+            _slidePage(context: context, state: state, child: const SyncPermissionsScreen()),
       ),
       GoRoute(
         path: '/dashboard',
-        builder: (_, __) => const DashboardScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(context: context, state: state, child: const DashboardScreen()),
       ),
       GoRoute(
         path: '/add-refund',
-        builder: (_, __) => const AddRefundScreen(),
+        pageBuilder: (context, state) =>
+            _slidePage(context: context, state: state, child: const AddRefundScreen()),
       ),
       GoRoute(
         path: '/profile',
-        builder: (_, __) => const ProfileScreen(),
+        pageBuilder: (context, state) =>
+            _slidePage(context: context, state: state, child: const ProfileScreen()),
       ),
       GoRoute(
         path: '/reports',
-        builder: (_, __) => const ReportsScreen(),
+        pageBuilder: (context, state) =>
+            _slidePage(context: context, state: state, child: const ReportsScreen()),
       ),
       GoRoute(
         path: '/refund/:id',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final id = state.pathParameters['id'] ?? '';
-          return RefundDetailScreen(refundId: id);
+          return _slidePage(
+            context: context,
+            state: state,
+            child: RefundDetailScreen(refundId: id),
+          );
         },
       ),
     ],

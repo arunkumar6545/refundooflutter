@@ -19,11 +19,13 @@ class RefundDetailScreen extends StatefulWidget {
 
 const _kCurrencies = ['₹', '\$', '€', '£', '¥'];
 
-class _RefundDetailScreenState extends State<RefundDetailScreen> {
+class _RefundDetailScreenState extends State<RefundDetailScreen>
+    with TickerProviderStateMixin {
   final RefundStorageService _storage = RefundStorageService();
   RefundItem? _refund;
   bool _loading = true;
   bool _showCoins = false;
+  late final AnimationController _timelineCtrl;
 
   static List<RefundTimelineStep> _timelineFor(RefundItem? refund) {
     if (refund == null) return [];
@@ -103,16 +105,28 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _timelineCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
     _loadRefund();
+  }
+
+  @override
+  void dispose() {
+    _timelineCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadRefund() async {
     final refund = await _storage.getRefundById(widget.refundId);
+    if (!mounted) return;
     setState(() {
       _refund = refund;
       _loading = false;
     });
-    // Play celebration if refund is already completed
+    _timelineCtrl.forward(from: 0);
+    // Show coin celebration if refund is already completed
     if (refund?.status == RefundStatus.completed) {
       Future.delayed(const Duration(milliseconds: 400), () {
         if (mounted) setState(() => _showCoins = true);
@@ -430,7 +444,7 @@ class _RefundDetailScreenState extends State<RefundDetailScreen> {
             // ── Refund source info card ──────────────────────────────────
             _RefundInfoCard(refund: refund, onEditCurrency: () => _showCurrencyPicker(context)),
             const SizedBox(height: 20),
-            _Timeline(steps: steps),
+            _Timeline(steps: steps, controller: _timelineCtrl),
             const SizedBox(height: 32),
             _MerchantContactCard(refund: refund),
             const SizedBox(height: 120),
@@ -730,9 +744,10 @@ class _CoinPainter extends CustomPainter {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _Timeline extends StatelessWidget {
-  const _Timeline({required this.steps});
+  const _Timeline({required this.steps, required this.controller});
 
   final List<RefundTimelineStep> steps;
+  final AnimationController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -755,9 +770,36 @@ class _Timeline extends StatelessWidget {
           children: steps.asMap().entries.map((entry) {
             final i = entry.key;
             final step = entry.value;
-            return _TimelineStepRow(
-              step: step,
-              isLast: i == steps.length - 1,
+
+            // Stagger: each step starts 150ms after the previous one.
+            final start = (i * 0.15).clamp(0.0, 0.7);
+            final end   = (start + 0.4).clamp(0.0, 1.0);
+
+            final fade = Tween<double>(begin: 0, end: 1).animate(
+              CurvedAnimation(
+                parent: controller,
+                curve: Interval(start, end, curve: Curves.easeOut),
+              ),
+            );
+            final slide = Tween<Offset>(
+              begin: const Offset(-0.15, 0),
+              end: Offset.zero,
+            ).animate(
+              CurvedAnimation(
+                parent: controller,
+                curve: Interval(start, end, curve: Curves.easeOutCubic),
+              ),
+            );
+
+            return FadeTransition(
+              opacity: fade,
+              child: SlideTransition(
+                position: slide,
+                child: _TimelineStepRow(
+                  step: step,
+                  isLast: i == steps.length - 1,
+                ),
+              ),
             );
           }).toList(),
         ),

@@ -84,7 +84,8 @@ class DashboardScreen extends StatefulWidget {
 /// Active dashboard filter: from Pending card, Wait Time card, or a category bento.
 enum _DashboardFilterKind { all, pending, waitTime, category }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with TickerProviderStateMixin {
   final RefundStorageService _storage = RefundStorageService();
   final SmsScannerService _smsScanner = SmsScannerService();
   final EmailScannerService _emailScanner = EmailScannerService();
@@ -92,6 +93,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final _scaffoldKey       = GlobalKey<ScaffoldState>();
   final _recentActivityKey = GlobalKey();
   late final ScrollController _scrollCtrl;
+
+  // Entrance animation — drives the staggered section/list fade+slide.
+  late final AnimationController _entranceCtrl;
+  // Separate controller for the headline amount count-up.
+  late final AnimationController _countCtrl;
+  double _countFrom = 0;
+  double _countTo   = 0;
 
   List<RefundItem> _refunds = [];
   bool _loading = true;
@@ -238,12 +246,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _scrollCtrl = ScrollController();
+    _entranceCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _countCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
     _loadRefunds();
   }
 
   @override
   void dispose() {
     _scrollCtrl.dispose();
+    _entranceCtrl.dispose();
+    _countCtrl.dispose();
     super.dispose();
   }
 
@@ -270,10 +288,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
     final list = await _storage.loadRefunds();
     if (!mounted) return;
+    final newAmount = list
+        .where((r) => r.status != RefundStatus.completed)
+        .fold(0.0, (sum, r) => sum + r.amount);
     setState(() {
-      _refunds = list;
-      _loading = false;
+      _countFrom = showLoader ? 0 : _countTo;
+      _countTo   = newAmount;
+      _refunds   = list;
+      _loading   = false;
     });
+    _entranceCtrl.forward(from: 0);
+    _countCtrl.forward(from: 0);
   }
 
   Future<void> _quickSync() async {
@@ -436,12 +461,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       delegate: SliverChildBuilderDelegate(
                                         (_, i) {
                                           final item = _filteredRefunds[i];
-                                          return _ActivityTile(
-                                            item: item,
-                                            onTap: () async {
-                                              await context.push('/refund/${item.id}');
-                                              if (mounted) _loadRefunds(showLoader: false);
-                                            },
+                                          return _AnimatedListItem(
+                                            index: i,
+                                            controller: _entranceCtrl,
+                                            child: _ActivityTile(
+                                              item: item,
+                                              onTap: () async {
+                                                await context.push('/refund/${item.id}');
+                                                if (mounted) _loadRefunds(showLoader: false);
+                                              },
+                                            ),
                                           );
                                         },
                                         childCount: _filteredRefunds.length,
@@ -452,12 +481,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     delegate: SliverChildBuilderDelegate(
                                       (_, i) {
                                         final item = _filteredRefunds[i];
-                                        return _ActivityTile(
-                                          item: item,
-                                          onTap: () async {
-                                            await context.push('/refund/${item.id}');
-                                            if (mounted) _loadRefunds(showLoader: false);
-                                          },
+                                        return _AnimatedListItem(
+                                          index: i,
+                                          controller: _entranceCtrl,
+                                          child: _ActivityTile(
+                                            item: item,
+                                            onTap: () async {
+                                              await context.push('/refund/${item.id}');
+                                              if (mounted) _loadRefunds(showLoader: false);
+                                            },
+                                          ),
                                         );
                                       },
                                       childCount: _filteredRefunds.length,
@@ -628,82 +661,134 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildHeadline(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: context.hPad, vertical: 24),
-      child: Column(
-        children: [
-          RichText(
-            textAlign: TextAlign.center,
-            text: TextSpan(
-              style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                    fontSize: 36,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-              children: _pendingAmount > 0
-                  ? [
-                      const TextSpan(text: 'You have '),
-                      TextSpan(
-                        text: '$_pendingCurrency${_pendingAmount.toStringAsFixed(0)}',
-                        style: const TextStyle(color: AppColors.primary),
-                      ),
-                      const TextSpan(text: ' on the way.'),
-                    ]
-                  : [
-                      const TextSpan(text: 'No pending\nrefunds '),
-                      TextSpan(
-                        text: '🎉',
-                        style: TextStyle(
-                          fontSize: 32,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-            ),
+    final slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _entranceCtrl,
+      curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
+    ));
+    final fadeAnim = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _entranceCtrl,
+        curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
+      ),
+    );
+
+    return FadeTransition(
+      opacity: fadeAnim,
+      child: SlideTransition(
+        position: slideAnim,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: context.hPad, vertical: 24),
+          child: Column(
+            children: [
+              // Count-up animation on the amount
+              AnimatedBuilder(
+                animation: _countCtrl,
+                builder: (context, _) {
+                  final displayed = Tween<double>(begin: _countFrom, end: _countTo)
+                      .animate(CurvedAnimation(
+                        parent: _countCtrl,
+                        curve: Curves.easeOut,
+                      ))
+                      .value;
+                  return RichText(
+                    textAlign: TextAlign.center,
+                    text: TextSpan(
+                      style: Theme.of(context).textTheme.displayLarge?.copyWith(
+                            fontSize: 36,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                      children: _countTo > 0
+                          ? [
+                              const TextSpan(text: 'You have '),
+                              TextSpan(
+                                text: '$_pendingCurrency${displayed.toStringAsFixed(0)}',
+                                style: const TextStyle(color: AppColors.primary),
+                              ),
+                              const TextSpan(text: ' on the way.'),
+                            ]
+                          : [
+                              const TextSpan(text: 'No pending\nrefunds '),
+                              TextSpan(
+                                text: '🎉',
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                ),
+                              ),
+                            ],
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _countTo > 0
+                    ? 'Estimated arrival in 3-5 business days'
+                    : 'Sync to scan for new refunds',
+                style: Theme.of(context).textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            _pendingAmount > 0
-                ? 'Estimated arrival in 3-5 business days'
-                : 'Sync to scan for new refunds',
-            style: Theme.of(context).textTheme.bodySmall,
-            textAlign: TextAlign.center,
-          ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildStatsRow(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: context.hPad),
-      child: Row(
-        children: [
+    final slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.35),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _entranceCtrl,
+      curve: const Interval(0.1, 0.6, curve: Curves.easeOutCubic),
+    ));
+    final fadeAnim = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _entranceCtrl,
+        curve: const Interval(0.1, 0.5, curve: Curves.easeOut),
+      ),
+    );
+
+    return FadeTransition(
+      opacity: fadeAnim,
+      child: SlideTransition(
+        position: slideAnim,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: context.hPad),
+          child: Row(
+            children: [
               Expanded(
-            child: _BentoCard(
-              icon: Icons.pending_actions_outlined,
-              iconColor: AppColors.primary,
-              label: 'Pending',
-              value: '$_pendingCurrency${_pendingAmount.toStringAsFixed(2)}',
-              primary: true,
-              onTap: () => setState(() {
-                _filterKind = _DashboardFilterKind.pending;
-                _filterCategory = null;
-              }),
-            ),
+                child: _BentoCard(
+                  icon: Icons.pending_actions_outlined,
+                  iconColor: AppColors.primary,
+                  label: 'Pending',
+                  value: '$_pendingCurrency${_pendingAmount.toStringAsFixed(2)}',
+                  primary: true,
+                  onTap: () => setState(() {
+                    _filterKind = _DashboardFilterKind.pending;
+                    _filterCategory = null;
+                  }),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _BentoCard(
+                  icon: Icons.schedule_outlined,
+                  label: 'Avg Wait Time',
+                  value: _waitLabel,
+                  onTap: () => setState(() {
+                    _filterKind = _DashboardFilterKind.waitTime;
+                    _filterCategory = null;
+                  }),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: _BentoCard(
-              icon: Icons.schedule_outlined,
-              label: 'Avg Wait Time',
-              value: _waitLabel,
-              onTap: () => setState(() {
-                _filterKind = _DashboardFilterKind.waitTime;
-                _filterCategory = null;
-              }),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1233,11 +1318,51 @@ class _CategoryBento extends StatelessWidget {
   }
 }
 
-class _ActivityTile extends StatelessWidget {
+// Staggered entrance wrapper used for each list item.
+class _AnimatedListItem extends StatelessWidget {
+  const _AnimatedListItem({
+    required this.index,
+    required this.controller,
+    required this.child,
+  });
+
+  final int index;
+  final AnimationController controller;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = (0.3 + index * 0.06).clamp(0.0, 0.85);
+    final end   = (start + 0.35).clamp(0.0, 1.0);
+
+    final fade = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: controller, curve: Interval(start, end, curve: Curves.easeOut)),
+    );
+    final slide = Tween<Offset>(begin: const Offset(0, 0.25), end: Offset.zero).animate(
+      CurvedAnimation(parent: controller, curve: Interval(start, end, curve: Curves.easeOutCubic)),
+    );
+
+    return FadeTransition(
+      opacity: fade,
+      child: SlideTransition(position: slide, child: child),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ActivityTile extends StatefulWidget {
   const _ActivityTile({required this.item, required this.onTap});
 
   final RefundItem item;
   final VoidCallback onTap;
+
+  @override
+  State<_ActivityTile> createState() => _ActivityTileState();
+}
+
+class _ActivityTileState extends State<_ActivityTile> {
+  bool _pressed = false;
 
   String _formatDate(DateTime? dt) {
     if (dt == null) return '';
@@ -1251,6 +1376,7 @@ class _ActivityTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final item   = widget.item;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final date = _formatDate(item.detectedAt ?? item.refundIssuedAt);
     final hasOrderId = item.orderId?.isNotEmpty == true;
@@ -1259,18 +1385,26 @@ class _ActivityTile extends StatelessWidget {
       if (hasOrderId) '#${item.orderId}',
     ].join('  ·  ');
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      child: Material(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.05)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        elevation: isDark ? 0 : 1,
-        shadowColor: Colors.black.withValues(alpha: 0.06),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOut,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+          child: Material(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            elevation: isDark ? 0 : 1,
+            shadowColor: Colors.black.withValues(alpha: 0.06),
+            child: InkWell(
+              onTap: widget.onTap,
+              borderRadius: BorderRadius.circular(16),
           child: Container(
             decoration: item.isOverdue
                 ? BoxDecoration(
@@ -1406,6 +1540,8 @@ class _ActivityTile extends StatelessWidget {
           ),
         ),
       ),
+        ),
+      ),
     );
   }
 }
@@ -1496,41 +1632,115 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-class _SyncFab extends StatelessWidget {
+class _SyncFab extends StatefulWidget {
   const _SyncFab({required this.onPressed, this.syncing = false});
 
   final VoidCallback? onPressed;
   final bool syncing;
 
   @override
+  State<_SyncFab> createState() => _SyncFabState();
+}
+
+class _SyncFabState extends State<_SyncFab> with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Material(
-      color: syncing
-          ? AppColors.primary.withValues(alpha: 0.75)
-          : AppColors.primary,
-      shape: const CircleBorder(),
-      elevation: 6,
-      shadowColor: AppColors.primary.withValues(alpha: 0.45),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onPressed,
-        child: SizedBox(
-          width: 52,
-          height: 52,
-          child: Center(
-            child: syncing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2.5, color: Colors.white),
-                  )
-                : const Icon(Icons.sync, color: Colors.white, size: 22),
+    return SizedBox(
+      width: 72,
+      height: 72,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Pulsing ring — only shown when idle (not syncing)
+          if (!widget.syncing)
+            AnimatedBuilder(
+              animation: _pulseCtrl,
+              builder: (_, __) {
+                final t = _pulseCtrl.value;
+                return CustomPaint(
+                  size: const Size(72, 72),
+                  painter: _PulseRingPainter(
+                    progress: t,
+                    color: AppColors.primary,
+                  ),
+                );
+              },
+            ),
+          Material(
+            color: widget.syncing
+                ? AppColors.primary.withValues(alpha: 0.75)
+                : AppColors.primary,
+            shape: const CircleBorder(),
+            elevation: 6,
+            shadowColor: AppColors.primary.withValues(alpha: 0.45),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: widget.onPressed,
+              child: SizedBox(
+                width: 52,
+                height: 52,
+                child: Center(
+                  child: widget.syncing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.5, color: Colors.white),
+                        )
+                      : const Icon(Icons.sync, color: Colors.white, size: 22),
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
+}
+
+class _PulseRingPainter extends CustomPainter {
+  const _PulseRingPainter({required this.progress, required this.color});
+
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final baseRadius = size.width * 0.36; // matches fab radius (52/2 / 72*36%)
+    final maxRadius  = size.width * 0.50;
+    final radius = baseRadius + (maxRadius - baseRadius) * progress;
+    final opacity = (1.0 - progress) * 0.45;
+
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..color = color.withValues(alpha: opacity)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_PulseRingPainter old) => old.progress != progress;
 }
 
 /// Draws subtle decorative circles in the top-right of category cards.
