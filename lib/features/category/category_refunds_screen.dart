@@ -134,6 +134,7 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
               onPressed: () => context.pop(),
             ),
             title: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.all(6),
@@ -154,52 +155,16 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
                     ),
                   ),
                 ),
-                // Refund count badge
                 if (!_loading) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '${_all.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        height: 1.0,
-                      ),
-                    ),
-                  ),
-                  // Overdue badge — only when there are overdue items
+                  // Refund count pill
+                  _AppBarPill(label: '${_all.length}'),
+                  // Overdue pill — only when there are overdue items
                   if (_overdueCount > 0) ...[
                     const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFB91C1C).withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.warning_amber_rounded,
-                              size: 11, color: Colors.white),
-                          const SizedBox(width: 3),
-                          Text(
-                            '$_overdueCount',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              height: 1.0,
-                            ),
-                          ),
-                        ],
-                      ),
+                    _AppBarPill(
+                      label: '$_overdueCount',
+                      icon: Icons.warning_amber_rounded,
+                      color: const Color(0xFFB91C1C),
                     ),
                   ],
                 ],
@@ -385,14 +350,6 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
                             height: 1.0,
                           )),
                       const Spacer(),
-                      Text(
-                        '${_all.length} item${_all.length == 1 ? '' : 's'}',
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.65),
-                            fontSize: 12,
-                            height: 1.0),
-                      ),
-                      const SizedBox(width: 8),
                       SizedBox(
                         width: 90,
                         child: Text(
@@ -534,6 +491,49 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
                 : 'No "$_chipFilter" refunds in this category',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey.shade500, fontSize: 15),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── AppBar pill badge ─────────────────────────────────────────────────────────
+
+class _AppBarPill extends StatelessWidget {
+  const _AppBarPill({required this.label, this.icon, this.color});
+
+  final String label;
+  final IconData? icon;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = color != null
+        ? color!.withValues(alpha: 0.45)
+        : Colors.white.withValues(alpha: 0.22);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: Colors.white),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              height: 1.0,
+            ),
           ),
         ],
       ),
