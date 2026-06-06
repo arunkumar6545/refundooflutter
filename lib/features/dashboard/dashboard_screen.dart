@@ -1476,19 +1476,17 @@ class _CategoryBentoState extends State<_CategoryBento>
             scale: _pressed ? 0.94 : 1.0,
             duration: const Duration(milliseconds: 110),
             curve: Curves.easeOut,
-            // LayoutBuilder lets us adapt content to whatever size the treemap
-            // allocates for this category cell.
             child: LayoutBuilder(builder: (context, constraints) {
-              final w     = constraints.maxWidth;
-              final h     = constraints.maxHeight;
-              // Thresholds for progressive content reveal.
-              final tiny  = w < 70  || h < 70;   // icon only
-              final small = w < 110 || h < 110;  // icon + name, no amount
-              final pad   = tiny ? 7.0 : 12.0;
-              final br    = tiny ? 10.0 : 14.0;
-              final iconSz = tiny ? 14.0 : 18.0;
-              final badgePad = tiny ? 5.0 : 7.0;
-              final bgIconSz = small ? 52.0 : 78.0;
+              final w = constraints.maxWidth;
+              final h = constraints.maxHeight;
+              // Tighter breakpoints to prevent content overflow on small cells.
+              final tiny  = w < 85  || h < 85;   // icon badge only
+              final small = w < 130 || h < 130;  // icon + name, no amount/badge
+              final pad      = tiny ? 7.0  : 11.0;
+              final br       = tiny ? 10.0 : 14.0;
+              final iconSz   = tiny ? 14.0 : 18.0;
+              final badgePad = tiny ? 5.0  : 7.0;
+              final bgIconSz = small ? 48.0 : 72.0;
 
               return Container(
                 decoration: BoxDecoration(
@@ -1536,87 +1534,65 @@ class _CategoryBentoState extends State<_CategoryBento>
                             ),
                           ),
                         ),
-                      // Foreground — also sizes the Stack's intrinsic height.
+                      // Foreground: OverflowBox lets the Column size to its
+                      // content; ClipRRect above clips any excess silently.
                       Positioned.fill(
-                        child: Padding(
-                          padding: EdgeInsets.all(pad),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Icon badge — always shown.
-                              Container(
-                                padding: EdgeInsets.all(badgePad),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.22),
-                                  borderRadius: BorderRadius.circular(br * 0.65),
+                        child: OverflowBox(
+                          alignment: Alignment.topLeft,
+                          maxHeight: double.infinity,
+                          child: Padding(
+                            padding: EdgeInsets.all(pad),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Icon badge — always shown.
+                                Container(
+                                  padding: EdgeInsets.all(badgePad),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.22),
+                                    borderRadius:
+                                        BorderRadius.circular(br * 0.65),
+                                  ),
+                                  child: Icon(iconForCategory(widget.category),
+                                      color: Colors.white, size: iconSz),
                                 ),
-                                child: Icon(iconForCategory(widget.category),
-                                    color: Colors.white, size: iconSz),
-                              ),
-                              // Category name — hidden in tiny cells.
-                              if (!tiny) ...[
-                                SizedBox(height: small ? 5 : 8),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        widget.category.label,
-                                        maxLines: small ? 1 : 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: small ? 10 : 12,
-                                          fontWeight: FontWeight.w700,
-                                          height: 1.0,
-                                        ),
-                                      ),
-                                    ),
-                                    if (widget.count > 0 && !small)
-                                      Container(
-                                        margin: const EdgeInsets.only(left: 4),
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 5, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.25),
-                                          borderRadius: BorderRadius.circular(20),
-                                        ),
-                                        child: Text('${widget.count}',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.w800,
-                                            height: 1.0,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                // Amount — only on non-small cells.
-                                if (!small) ...[
-                                  const SizedBox(height: 2),
+                                // Category name — hidden in tiny cells.
+                                if (!tiny) ...[
+                                  SizedBox(height: small ? 5 : 8),
                                   Text(
-                                    widget.amount > 0
-                                        ? (widget.pending
-                                            ? '${widget.currencySymbol}'
-                                              '${widget.amount.toStringAsFixed(0)} pending'
-                                            : '${widget.currencySymbol}'
-                                              '${widget.amount.toStringAsFixed(0)}')
-                                        : 'No refunds',
+                                    widget.category.label,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.80),
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w500,
+                                      color: Colors.white,
+                                      fontSize: small ? 10 : 12,
+                                      fontWeight: FontWeight.w700,
                                       height: 1.0,
                                     ),
                                   ),
+                                  if (!small && widget.amount > 0) ...[
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      widget.pending
+                                          ? '${widget.currencySymbol}'
+                                            '${widget.amount.toStringAsFixed(0)} pending'
+                                          : '${widget.currencySymbol}'
+                                            '${widget.amount.toStringAsFixed(0)}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(
+                                            alpha: 0.80),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.0,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       ),

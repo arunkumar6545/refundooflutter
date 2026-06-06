@@ -215,7 +215,10 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
       );
     }).where((r) => r.count > 0).toList();
 
-    final grandTotal   = _all.fold(0.0, (s, r) => s + r.amount);
+    // Pending total = non-completed amounts, matching the dashboard card figure.
+    final grandTotal = _all
+        .where((r) => r.status != RefundStatus.completed)
+        .fold(0.0, (s, r) => s + r.amount);
 
     final fmt = NumberFormat('#,##0.00', 'en_IN');
     const sym = '₹';
@@ -339,10 +342,10 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
                       color: Colors.white.withValues(alpha: 0.35), height: 1),
                   const SizedBox(height: 10),
 
-                  // Grand total row
+                  // Total Pending row — matches the dashboard category card figure
                   Row(
                     children: [
-                      const Text('Grand Total',
+                      const Text('Total Pending',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 13,
