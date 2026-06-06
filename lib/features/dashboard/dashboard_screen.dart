@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -945,16 +946,17 @@ class _DashboardScreenState extends State<DashboardScreen>
       RefundCategory.entertainment,
     ];
 
-    // Minimum layout weight keeps empty categories visible.
-    final amounts  = categories.map(amountFor);
-    final maxAmt   = amounts.fold(0.0, (a, b) => b > a ? b : a);
-    final minVal   = maxAmt > 0 ? maxAmt * 0.10 : 1.0;
-
+    // Log compression: math.log(1+amount)+1 for non-zero categories,
+    // 1.0 for zero-item categories.
+    // This guarantees every category with actual refunds is always larger
+    // than an empty category, while dampening extreme skews so even a
+    // ₹1 category is comfortably tappable.
     final items = categories.asMap().entries.map((e) {
       final amt = amountFor(e.value);
+      final weight = amt > 0 ? (math.log(1 + amt) + 1.0) : 1.0;
       return _TMapItem(
         category:       e.value,
-        value:          amt > 0 ? amt : minVal,
+        value:          weight,
         amount:         amt,
         count:          countFor(e.value),
         pending:        pendingFor(e.value),
