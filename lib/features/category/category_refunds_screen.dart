@@ -76,6 +76,8 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
   }
 
   Future<void> _delete(RefundItem item) async {
+    // Tombstone so this SMS/email is never re-imported.
+    await _storage.dismissRefund(item.id);
     final saved   = await _storage.loadRefunds();
     final updated = saved.where((r) => r.id != item.id).toList();
     await _storage.saveRefunds(updated);

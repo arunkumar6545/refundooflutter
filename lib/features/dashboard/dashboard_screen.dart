@@ -282,6 +282,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _deleteRefund(RefundItem item) async {
+    // Tombstone first so this ID is never re-imported by SMS/email scans.
+    await _storage.dismissRefund(item.id);
     final all = await _storage.loadRefunds();
     final updated = all.where((r) => r.id != item.id).toList();
     await _storage.saveRefunds(updated);

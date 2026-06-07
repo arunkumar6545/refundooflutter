@@ -7,7 +7,11 @@ import '../models/refund_item.dart';
 /// Persists all refund tracking data using encrypted storage (Android Keystore).
 /// Nothing is sent to any server. All data stays on this device.
 class RefundStorageService {
-  static const String _keyRefunds = 'refundoo_refund_items_v2';
+  static const String _keyRefunds    = 'refundoo_refund_items_v2';
+  /// Tombstone set: IDs that were explicitly deleted by the user.
+  /// mergeAndSave will never re-import items whose ID is in this set,
+  /// so SMS/email false-positives do not resurface after deletion.
+  static const String _keyDismissed  = 'refundoo_dismissed_ids_v1';
 
   // Use EncryptedSharedPreferences on Android (backed by Android Keystore).
   static const _storage = FlutterSecureStorage(
@@ -34,14 +38,17 @@ class RefundStorageService {
   }
 
   /// Merges new items with existing (by id), then saves. Returns updated list.
-  /// If an existing item was manually completed, its status + reason are preserved.
+  /// • Items whose ID is in the dismissed set are silently skipped — deleted
+  ///   false-positives will never resurface from subsequent SMS/email scans.
+  /// • If an existing item was manually completed, its status + reason are preserved.
   Future<List<RefundItem>> mergeAndSave(List<RefundItem> newItems) async {
-    final existing = await loadRefunds();
+    final existing    = await loadRefunds();
+    final dismissed   = await loadDismissedIds();
     final byId = {for (final r in existing) r.id: r};
     for (final r in newItems) {
+      if (dismissed.contains(r.id)) continue;   // skip dismissed false-positives
       final prev = byId[r.id];
       if (prev != null && prev.manuallyCompleted) {
-        // Keep completed status + user's reason — sync must not revert either
         byId[r.id] = r.copyWith(
           status: RefundStatus.completed,
           manuallyCompleted: true,
@@ -65,5 +72,32 @@ class RefundStorageService {
     } catch (_) {
       return null;
     }
+  }
+
+  // ── Dismissed-ID tombstone ────────────────────────────────────────────────
+
+  Future<Set<String>> loadDismissedIds() async {
+    final raw = await _storage.read(key: _keyDismissed);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      return Set<String>.from(jsonDecode(raw) as List<dynamic>);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Marks [id] as permanently dismissed so mergeAndSave will never
+  /// re-import it from SMS/email scans.
+  Future<void> dismissRefund(String id) async {
+    final ids = await loadDismissedIds();
+    ids.add(id);
+    await _storage.write(key: _keyDismissed, value: jsonEncode(ids.toList()));
+  }
+
+  /// Removes [id] from the dismissed set (lets it be re-scanned / re-added).
+  Future<void> undismissRefund(String id) async {
+    final ids = await loadDismissedIds();
+    ids.remove(id);
+    await _storage.write(key: _keyDismissed, value: jsonEncode(ids.toList()));
   }
 }
