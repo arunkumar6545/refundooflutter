@@ -7,8 +7,9 @@ class WidgetService {
 
   static Future<void> update(List<RefundItem> refunds) async {
     try {
-      final pending =
-          refunds.where((r) => r.status != RefundStatus.completed).toList();
+      final pending = refunds
+          .where((r) => !r.archived && r.status != RefundStatus.completed)
+          .toList();
       final amount = pending.fold(0.0, (s, r) => s + r.amount);
       final count = pending.length;
 

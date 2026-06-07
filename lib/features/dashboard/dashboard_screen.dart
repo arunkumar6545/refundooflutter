@@ -194,7 +194,7 @@ class _DashboardScreenState extends State<DashboardScreen>
       for (final c in RefundCategory.values)
         c: (total: 0, hasPending: false, currencies: {}, count: 0),
     };
-    for (final r in _refunds) {
+    for (final r in _refunds.where((r) => !r.archived)) {
       final cat = r.category ?? RefundCategory.retail;
       final cur = byCategory[cat]!;
       final cmap = Map<String, int>.from(cur.currencies);

@@ -90,7 +90,7 @@ class NotificationService {
     await _ensureInit();
 
     final overdue = refunds
-        .where((r) => r.isOverdue && r.status != RefundStatus.completed)
+        .where((r) => !r.archived && r.isOverdue && r.status != RefundStatus.completed)
         .take(_kMaxOverdue)
         .toList();
 
