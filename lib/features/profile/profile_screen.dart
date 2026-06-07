@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_logo.dart';
@@ -9,6 +12,7 @@ import 'package:intl/intl.dart';
 import '../../main.dart' show premiumNotifier, themeModeNotifier;
 import '../../services/notification_service.dart';
 import '../../services/premium_service.dart';
+import '../../services/profile_picture_service.dart';
 import '../../services/swipe_settings_service.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -24,6 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _name = '';
   String _email = '';
   String? _photoUrl;
+  File? _localPhoto;
   bool _smsEnabled = false;
   bool _emailSyncEnabled = false;
   String? _approvedEmailAccount;
@@ -41,6 +46,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadSyncStatus();
     _loadPremiumStatus();
     _loadSwipeSettings();
+    _loadLocalPhoto();
+  }
+
+  Future<void> _loadLocalPhoto() async {
+    final file = await ProfilePictureService.loadLocal();
+    if (mounted) setState(() => _localPhoto = file);
   }
 
   Future<void> _loadUser() async {
@@ -209,39 +220,160 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildAvatar(BuildContext context) {
-    return Stack(
-      alignment: Alignment.bottomRight,
-      children: [
-        Container(
-          width: 96,
-          height: 96,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [AppColors.primary, AppColors.pastelBlue],
+    return GestureDetector(
+      onTap: () => _showAvatarPicker(context),
+      child: Stack(
+        alignment: Alignment.bottomRight,
+        children: [
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [AppColors.primary, AppColors.pastelBlue],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+            child: ClipOval(child: _avatarImage()),
+          ),
+          // Camera badge
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Icon(Icons.camera_alt_rounded,
+                size: 14, color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _avatarImage() {
+    if (_localPhoto != null) {
+      return Image.file(_localPhoto!, fit: BoxFit.cover,
+          width: 96, height: 96);
+    }
+    if (_photoUrl != null) {
+      return Image.network(
+        _photoUrl!,
+        fit: BoxFit.cover,
+        width: 96,
+        height: 96,
+        errorBuilder: (_, __, ___) =>
+            const Icon(Icons.person, size: 48, color: Colors.white70),
+      );
+    }
+    return const Icon(Icons.person, size: 48, color: Colors.white70);
+  }
+
+  Future<void> _showAvatarPicker(BuildContext context) async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1A1A2E) : Colors.white,
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 8,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 28,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.textMuted.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text('Change Profile Photo',
+                style: Theme.of(ctx)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 20),
+            _PickerOption(
+              icon: Icons.camera_alt_rounded,
+              label: 'Take a photo',
+              color: AppColors.primary,
+              isDark: isDark,
+              onTap: () async {
+                Navigator.pop(ctx);
+                final file = await ProfilePictureService.pick(
+                    source: ImageSource.camera);
+                if (mounted && file != null) {
+                  setState(() => _localPhoto = file);
+                }
+              },
+            ),
+            const SizedBox(height: 12),
+            _PickerOption(
+              icon: Icons.photo_library_rounded,
+              label: 'Choose from gallery',
+              color: const Color(0xFF7C3AED),
+              isDark: isDark,
+              onTap: () async {
+                Navigator.pop(ctx);
+                final file = await ProfilePictureService.pick(
+                    source: ImageSource.gallery);
+                if (mounted && file != null) {
+                  setState(() => _localPhoto = file);
+                }
+              },
+            ),
+            if (_localPhoto != null) ...[
+              const SizedBox(height: 12),
+              _PickerOption(
+                icon: Icons.delete_outline_rounded,
+                label: 'Remove photo',
+                color: const Color(0xFFDC2626),
+                isDark: isDark,
+                isDestructive: true,
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await ProfilePictureService.clear();
+                  if (mounted) setState(() => _localPhoto = null);
+                },
               ),
             ],
-          ),
-          child: _photoUrl != null
-              ? ClipOval(
-                  child: Image.network(
-                    _photoUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        const Icon(Icons.person, size: 48, color: Colors.white70),
-                  ),
-                )
-              : const Icon(Icons.person, size: 48, color: Colors.white70),
+            const SizedBox(height: 8),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -1137,6 +1269,80 @@ class _NavItem extends StatelessWidget {
                   color: AppColors.primary, shape: BoxShape.circle),
             ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Picker option tile used in the change-avatar bottom sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PickerOption extends StatelessWidget {
+  const _PickerOption({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.isDark,
+    required this.onTap,
+    this.isDestructive = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool isDark;
+  final VoidCallback onTap;
+  final bool isDestructive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: isDestructive
+                ? color.withValues(alpha: 0.06)
+                : (isDark
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : color.withValues(alpha: 0.07)),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: color.withValues(alpha: isDestructive ? 0.3 : 0.18),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 14),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: isDestructive
+                      ? color
+                      : (isDark ? Colors.white : const Color(0xFF1E293B)),
+                ),
+              ),
+              const Spacer(),
+              Icon(Icons.arrow_forward_ios_rounded,
+                  size: 14, color: color.withValues(alpha: 0.5)),
+            ],
+          ),
+        ),
       ),
     );
   }

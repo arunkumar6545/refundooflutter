@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -94,19 +95,31 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
     var account = _auth.currentUser;
     if (account == null) {
       setState(() => _loadingPrefs = true);
+      String? signInError;
       try { account = await _auth.signInSilently(); } catch (_) {}
       if (account == null) {
-        try { account = await _auth.signIn(); } catch (_) {}
+        try {
+          account = await _auth.signIn();
+        } on PlatformException catch (e) {
+          signInError = _describeSignInError(e);
+        } catch (e) {
+          signInError = 'Sign-in error: $e';
+        }
       }
       if (mounted) setState(() => _loadingPrefs = false);
       if (account == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Google sign-in failed. Please try again.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        if (signInError != null && signInError.contains('not configured')) {
+          _showSetupHelpDialog();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(signInError ?? 'Google sign-in failed. Please try again.'),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 6),
+            ),
+          );
+        }
         return;
       }
     }
@@ -122,7 +135,16 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
       return;
     }
 
-    final granted = await _auth.requestGmailScope();
+    bool granted = false;
+    String? scopeError;
+    try {
+      granted = await _auth.requestGmailScope();
+    } on PlatformException catch (e) {
+      scopeError = _describeSignInError(e);
+    } catch (e) {
+      scopeError = 'Permission error: $e';
+    }
+
     if (!mounted) return;
     if (granted) {
       await _emailScanner.addApprovedAccount(account.email);
@@ -134,13 +156,85 @@ class _SyncPermissionsScreenState extends State<SyncPermissionsScreen> {
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Gmail permission was not granted.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (scopeError != null && scopeError.contains('not configured')) {
+        _showSetupHelpDialog();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(scopeError ?? 'Gmail permission was not granted. Please try again.'),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
     }
+  }
+
+  /// Converts a PlatformException from google_sign_in into a user-readable message.
+  String _describeSignInError(PlatformException e) {
+    final msg = e.message ?? '';
+    // Code 10 = DEVELOPER_ERROR (google-services.json / SHA-1 not configured)
+    if (e.code == 'sign_in_failed' && (msg.contains('10:') || msg.contains('DEVELOPER_ERROR'))) {
+      return 'Google Sign-In is not configured for this build.';
+    }
+    if (e.code == 'sign_in_failed' && msg.contains('7:')) {
+      return 'Network error. Please check your internet connection and try again.';
+    }
+    if (e.code == 'sign_in_cancelled') {
+      return 'Sign-in was cancelled.';
+    }
+    if (e.code == 'network_error') {
+      return 'Network error. Please check your internet connection.';
+    }
+    return 'Sign-in failed (${e.code}): $msg';
+  }
+
+  void _showSetupHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706)),
+            SizedBox(width: 8),
+            Text('Gmail setup required'),
+          ],
+        ),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Gmail sign-in needs a one-time setup in the Google/Firebase console. '
+                'This is separate from your regular Google account — it configures the app '
+                'to be allowed to request Gmail access.\n',
+              ),
+              Text('Steps to fix:', style: TextStyle(fontWeight: FontWeight.w700)),
+              SizedBox(height: 6),
+              _SetupStep(n: '1', text: 'Go to console.firebase.google.com'),
+              _SetupStep(n: '2', text: 'Open your Refundoo project → Project Settings'),
+              _SetupStep(n: '3', text: 'Under "Your apps" → Android app → download google-services.json'),
+              _SetupStep(n: '4', text: 'Place it in android/app/ in the project folder'),
+              _SetupStep(n: '5', text: 'Add your debug SHA-1 fingerprint:\nRun: keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android'),
+              _SetupStep(n: '6', text: 'Add that SHA-1 in Firebase → Project Settings → Your Android app → Add fingerprint'),
+              SizedBox(height: 8),
+              Text(
+                'The Codemagic release build may already work if the release keystore SHA-1 is registered.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _removeEmailAccount(String email) async {
@@ -684,6 +778,50 @@ class _CoverageTile extends StatelessWidget {
                     ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper widget for the setup-help dialog numbered steps
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SetupStep extends StatelessWidget {
+  const _SetupStep({required this.n, required this.text});
+  final String n;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            margin: const EdgeInsets.only(top: 1, right: 8),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                n,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(text, style: const TextStyle(fontSize: 13)),
           ),
         ],
       ),

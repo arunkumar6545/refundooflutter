@@ -26,6 +26,12 @@
 	</array>
 	<key>NSUserNotificationsUsageDescription</key>
 	<string>Refundoo reminds you when a refund is overdue.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Refundoo uses the camera to let you take a profile photo.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Refundoo accesses your photo library to let you set a profile photo.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Refundoo may save photos to your library.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

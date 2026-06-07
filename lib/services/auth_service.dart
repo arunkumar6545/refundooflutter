@@ -39,12 +39,8 @@ class AuthService {
   /// Returns true when the scope is granted.
   Future<bool> requestGmailScope() async {
     if (_currentUser == null) return false;
-    try {
-      final granted = await _googleSignIn.requestScopes([_gmailScope]);
-      return granted;
-    } catch (_) {
-      return false;
-    }
+    final granted = await _googleSignIn.requestScopes([_gmailScope]);
+    return granted;
   }
 
   /// True when the current account has the Gmail readonly scope.
