@@ -33,7 +33,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
     if (!mounted) return;
     setState(() {
       _completed = all
-          .where((r) => r.status == RefundStatus.completed)
+          .where((r) => r.archived)
           .toList()
         ..sort((a, b) {
           final da = a.refundIssuedAt ?? a.detectedAt ?? DateTime(0);
@@ -133,7 +133,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
                     color: AppColors.textMuted,
                   )),
           const SizedBox(height: 8),
-          Text('Completed refunds will appear here.',
+          Text('Archived refunds will appear here.\nSwipe right on any refund to archive it.',
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center),
         ],

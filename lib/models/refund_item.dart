@@ -101,6 +101,8 @@ class RefundItem {
     this.refundIssuer,
     this.senderAddress,
     this.notes = const [],
+    this.archived = false,
+    this.completedAt,
   });
 
   final String id;
@@ -134,6 +136,13 @@ class RefundItem {
   final String? senderAddress;
   /// User-authored follow-up notes (text + optional photo).
   final List<RefundNote> notes;
+  /// True when the user has explicitly archived this item (right-swipe) or it
+  /// was auto-archived after staying in completed state for ≥ 1 day.
+  /// Archived items are hidden from the dashboard and category screens.
+  final bool archived;
+  /// Timestamp when the item transitioned to completed status.
+  /// Used to drive the 1-day auto-archive timer.
+  final DateTime? completedAt;
 
   /// Formatted amount string, e.g. "₹499.00" or "$34.99"
   String get formattedAmount => '$currency${amount.toStringAsFixed(2)}';
@@ -193,6 +202,8 @@ class RefundItem {
     String? refundIssuer,
     String? senderAddress,
     List<RefundNote>? notes,
+    bool? archived,
+    DateTime? completedAt,
   }) {
     return RefundItem(
       id: id ?? this.id,
@@ -215,6 +226,8 @@ class RefundItem {
       refundIssuer: refundIssuer ?? this.refundIssuer,
       senderAddress: senderAddress ?? this.senderAddress,
       notes: notes ?? this.notes,
+      archived: archived ?? this.archived,
+      completedAt: completedAt ?? this.completedAt,
     );
   }
 
@@ -295,6 +308,8 @@ class RefundItem {
       'refundIssuer': refundIssuer,
       'senderAddress': senderAddress,
       'notes': notes.map((n) => n.toJson()).toList(),
+      'archived': archived,
+      'completedAt': completedAt?.toIso8601String(),
     };
   }
 
@@ -331,6 +346,10 @@ class RefundItem {
               ?.map((e) => RefundNote.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
+      archived: json['archived'] as bool? ?? false,
+      completedAt: json['completedAt'] != null
+          ? DateTime.tryParse(json['completedAt'] as String)
+          : null,
     );
   }
 }

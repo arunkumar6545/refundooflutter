@@ -41,6 +41,7 @@ class RefundStorageService {
   /// • Items whose ID is in the dismissed set are silently skipped — deleted
   ///   false-positives will never resurface from subsequent SMS/email scans.
   /// • If an existing item was manually completed, its status + reason are preserved.
+  /// • When an item transitions to completed, completedAt is stamped with now.
   Future<List<RefundItem>> mergeAndSave(List<RefundItem> newItems) async {
     final existing    = await loadRefunds();
     final dismissed   = await loadDismissedIds();
@@ -53,9 +54,16 @@ class RefundStorageService {
           status: RefundStatus.completed,
           manuallyCompleted: true,
           description: prev.description,
+          // Preserve existing completedAt or stamp now if missing.
+          completedAt: prev.completedAt ?? DateTime.now(),
         );
       } else {
-        byId[r.id] = r;
+        // Stamp completedAt when transitioning into completed for the first time.
+        final justCompleted = r.status == RefundStatus.completed &&
+            (prev == null || prev.status != RefundStatus.completed);
+        byId[r.id] = justCompleted
+            ? r.copyWith(completedAt: r.completedAt ?? DateTime.now())
+            : r;
       }
     }
     final merged = byId.values.toList()
@@ -99,5 +107,37 @@ class RefundStorageService {
     final ids = await loadDismissedIds();
     ids.remove(id);
     await _storage.write(key: _keyDismissed, value: jsonEncode(ids.toList()));
+  }
+
+  // ── Archive ───────────────────────────────────────────────────────────────
+
+  /// Marks a single item as archived (right-swipe action).
+  Future<void> archiveRefund(String id) async {
+    final all = await loadRefunds();
+    final updated = all
+        .map((r) => r.id == id ? r.copyWith(archived: true) : r)
+        .toList();
+    await saveRefunds(updated);
+  }
+
+  /// Automatically archives any completed item whose [completedAt] is ≥ 1 day
+  /// ago. Call this once on app launch / dashboard load.
+  /// Returns the full updated list so callers can refresh their state.
+  Future<List<RefundItem>> autoArchiveCompleted() async {
+    final all = await loadRefunds();
+    final now = DateTime.now();
+    bool changed = false;
+    final updated = all.map((r) {
+      if (!r.archived &&
+          r.status == RefundStatus.completed &&
+          r.completedAt != null &&
+          now.difference(r.completedAt!).inHours >= 24) {
+        changed = true;
+        return r.copyWith(archived: true);
+      }
+      return r;
+    }).toList();
+    if (changed) await saveRefunds(updated);
+    return updated;
   }
 }

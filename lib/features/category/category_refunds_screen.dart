@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/category_theme.dart';
 import '../../models/refund_item.dart';
 import '../../services/refund_storage_service.dart';
+import '../../services/swipe_settings_service.dart';
 
 class CategoryRefundsScreen extends StatefulWidget {
   const CategoryRefundsScreen({super.key, required this.category});
@@ -24,6 +25,8 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
 
   List<RefundItem> _all = [];
   bool _loading = true;
+  SwipeAction _swipeLeft  = SwipeAction.delete;
+  SwipeAction _swipeRight = SwipeAction.archive;
 
   int get _overdueCount => _all.where((r) => r.isOverdue).length;
 
@@ -57,14 +60,17 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
   }
 
   Future<void> _load() async {
-    final all = await _storage.loadRefunds();
+    final all   = await _storage.loadRefunds();
+    final swipe = await SwipeSettingsService.load();
     if (!mounted) return;
     setState(() {
-      _all = all.where((r) => r.category == widget.category).toList()
+      _all = all.where((r) => r.category == widget.category && !r.archived).toList()
         ..sort((a, b) =>
             (b.detectedAt ?? b.refundIssuedAt ?? DateTime(0))
                 .compareTo(a.detectedAt ?? a.refundIssuedAt ?? DateTime(0)));
-      _loading = false;
+      _loading    = false;
+      _swipeLeft  = swipe.left;
+      _swipeRight = swipe.right;
     });
     _entranceCtrl.forward(from: 0);
   }
@@ -88,30 +94,23 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
     });
   }
 
-  Future<bool> _confirmDelete(RefundItem item) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Delete refund?'),
-        content: Text(
-          'Remove "${item.merchantName}" (${item.formattedAmount})?\nThis cannot be undone.',
+  Future<void> _archive(RefundItem item) async {
+    await _storage.archiveRefund(item.id);
+    if (!mounted) return;
+    setState(() {
+      _all = _all.where((r) => r.id != item.id).toList();
+      _entranceCtrl.forward(from: 0);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Moved to Archive'),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'View',
+          onPressed: () => context.push('/archive'),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
       ),
     );
-    return result ?? false;
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -440,32 +439,78 @@ class _CategoryRefundsScreenState extends State<CategoryRefundsScreen>
   // ── Dismissible wrapper ───────────────────────────────────────────────────
 
   Widget _buildDismissible(RefundItem item, int index) {
-    return Dismissible(
-      key: Key('cat_${item.id}'),
-      direction: DismissDirection.endToStart,
-      confirmDismiss: (_) => _confirmDelete(item),
-      onDismissed:   (_) => _delete(item),
-      background: Container(
+    final leftAction  = _swipeLeft;
+    final rightAction = _swipeRight;
+
+    Future<bool?> confirm(SwipeAction action) => showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(action == SwipeAction.delete ? 'Delete refund?' : 'Archive refund?'),
+        content: Text(
+          action == SwipeAction.delete
+              ? 'Remove "${item.merchantName}" (${item.formattedAmount})?\nThis cannot be undone.'
+              : 'Move "${item.merchantName}" to Archive?\nYou can still view it there.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            style: action == SwipeAction.delete
+                ? FilledButton.styleFrom(backgroundColor: const Color(0xFFDC2626))
+                : null,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
+
+    Widget bg(SwipeAction action, Alignment align, EdgeInsets pad) {
+      final isDelete = action == SwipeAction.delete;
+      return Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.error,
+          color: isDelete ? const Color(0xFFDC2626) : const Color(0xFF0D9488),
           borderRadius: BorderRadius.circular(16),
         ),
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        child: const Column(
+        alignment: align,
+        padding: pad,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.delete_outline, color: Colors.white, size: 22),
-            SizedBox(height: 4),
-            Text('Delete',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
+            Icon(isDelete ? Icons.delete_outline : Icons.archive_outlined,
+                color: Colors.white, size: 22),
+            const SizedBox(height: 4),
+            Text(action.label,
+                style: const TextStyle(color: Colors.white, fontSize: 11,
                     fontWeight: FontWeight.w700)),
           ],
         ),
-      ),
+      );
+    }
+
+    return Dismissible(
+      key: Key('cat_${item.id}'),
+      direction: DismissDirection.horizontal,
+      confirmDismiss: (direction) {
+        final action = direction == DismissDirection.startToEnd
+            ? rightAction : leftAction;
+        return confirm(action);
+      },
+      onDismissed: (direction) {
+        final action = direction == DismissDirection.startToEnd
+            ? rightAction : leftAction;
+        if (action == SwipeAction.delete) {
+          _delete(item);
+        } else {
+          _archive(item);
+        }
+      },
+      background:          bg(rightAction, Alignment.centerLeft,  const EdgeInsets.only(left: 20)),
+      secondaryBackground: bg(leftAction,  Alignment.centerRight, const EdgeInsets.only(right: 20)),
       child: _TileWithEntrance(
         index: index,
         controller: _entranceCtrl,

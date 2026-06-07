@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import '../../main.dart' show premiumNotifier, themeModeNotifier;
 import '../../services/notification_service.dart';
 import '../../services/premium_service.dart';
+import '../../services/swipe_settings_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -30,6 +31,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _notificationsEnabled = true;
   bool _isPremium = false;
   DateTime? _premiumExpiry;
+  SwipeAction _swipeLeft  = SwipeAction.delete;
+  SwipeAction _swipeRight = SwipeAction.archive;
 
   @override
   void initState() {
@@ -37,6 +40,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadUser();
     _loadSyncStatus();
     _loadPremiumStatus();
+    _loadSwipeSettings();
   }
 
   Future<void> _loadUser() async {
@@ -61,6 +65,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _isPremium = active;
       _premiumExpiry = expiry;
+    });
+  }
+
+  Future<void> _loadSwipeSettings() async {
+    final swipe = await SwipeSettingsService.load();
+    if (!mounted) return;
+    setState(() {
+      _swipeLeft  = swipe.left;
+      _swipeRight = swipe.right;
     });
   }
 
@@ -163,6 +176,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _buildSyncSection(context),
             const SizedBox(height: 24),
             _buildNotificationsSection(context),
+            const SizedBox(height: 24),
+            _buildSwipeSection(context),
             const SizedBox(height: 24),
             _buildAppearanceSection(context),
             const SizedBox(height: 24),
@@ -576,6 +591,97 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSwipeSection(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    Widget swipeRow({
+      required String label,
+      required IconData icon,
+      required SwipeAction value,
+      required ValueChanged<SwipeAction?> onChanged,
+    }) {
+      return Row(
+        children: [
+          Icon(icon, size: 18,
+              color: isDark ? Colors.white70 : Colors.grey.shade600),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(label,
+                style: Theme.of(context).textTheme.bodyMedium),
+          ),
+          DropdownButton<SwipeAction>(
+            value: value,
+            underline: const SizedBox.shrink(),
+            borderRadius: BorderRadius.circular(12),
+            items: SwipeAction.values.map((a) => DropdownMenuItem(
+              value: a,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    a == SwipeAction.archive
+                        ? Icons.archive_outlined
+                        : Icons.delete_outline,
+                    size: 16,
+                    color: a == SwipeAction.archive
+                        ? const Color(0xFF0D9488)
+                        : const Color(0xFFDC2626),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(a.label),
+                ],
+              ),
+            )).toList(),
+            onChanged: onChanged,
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Swipe Gestures', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 4),
+        Text('Configure what left and right swipe do on refund tiles.',
+            style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              swipeRow(
+                label: 'Swipe right',
+                icon: Icons.swipe_right_outlined,
+                value: _swipeRight,
+                onChanged: (a) async {
+                  if (a == null) return;
+                  await SwipeSettingsService.setRightAction(a);
+                  setState(() => _swipeRight = a);
+                },
+              ),
+              const Divider(height: 20),
+              swipeRow(
+                label: 'Swipe left',
+                icon: Icons.swipe_left_outlined,
+                value: _swipeLeft,
+                onChanged: (a) async {
+                  if (a == null) return;
+                  await SwipeSettingsService.setLeftAction(a);
+                  setState(() => _swipeLeft = a);
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

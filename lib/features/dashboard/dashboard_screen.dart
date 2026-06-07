@@ -20,6 +20,7 @@ import '../../core/widgets/banner_ad_widget.dart';
 import '../../services/ad_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/widget_service.dart';
+import '../../services/swipe_settings_service.dart';
 
 // Icon + gradient helpers are in lib/core/theme/category_theme.dart
 
@@ -57,6 +58,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   double _countTo   = 0;
 
   List<RefundItem> _refunds = [];
+  SwipeAction _swipeLeft  = SwipeAction.delete;
+  SwipeAction _swipeRight = SwipeAction.archive;
   // Pre-computed views — updated only when source data or filters change,
   // not on every animation/setState call.
   List<RefundItem> _displayRefunds = [];
@@ -137,7 +140,8 @@ class _DashboardScreenState extends State<DashboardScreen>
   /// Call whenever _refunds, filter fields, or _searchQuery changes.
   void _rebuildDerived() {
     // ── filtered list ────────────────────────────────────────────────────────
-    List<RefundItem> list = _refunds;
+    // Always exclude archived items from all dashboard views.
+    List<RefundItem> list = _refunds.where((r) => !r.archived).toList();
 
     switch (_filterKind) {
       case _DashboardFilterKind.pending:
@@ -243,30 +247,81 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Widget _buildDismissible(BuildContext context, RefundItem item, int index) {
-    return Dismissible(
-      key: Key('refund_${item.id}'),
-      direction: DismissDirection.endToStart,
-      confirmDismiss: (_) => _confirmDelete(context, item),
-      onDismissed: (_) => _deleteRefund(item),
-      background: Container(
+    final leftAction  = _swipeLeft;
+    final rightAction = _swipeRight;
+
+    Future<bool?> confirm(SwipeAction action) => showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(action == SwipeAction.delete ? 'Delete refund?' : 'Archive refund?'),
+        content: Text(
+          action == SwipeAction.delete
+              ? 'Remove "${item.merchantName}" (${item.formattedAmount})?\nThis cannot be undone.'
+              : 'Move "${item.merchantName}" to Archive?\nYou can still view it there.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            style: action == SwipeAction.delete
+                ? FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error)
+                : null,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
+
+    Widget _bg(SwipeAction action, Alignment align, EdgeInsets pad) {
+      final isDelete = action == SwipeAction.delete;
+      return Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.error,
+          color: isDelete ? const Color(0xFFDC2626) : const Color(0xFF0D9488),
           borderRadius: BorderRadius.circular(16),
         ),
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        child: const Column(
+        alignment: align,
+        padding: pad,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.delete_outline, color: Colors.white, size: 22),
-            SizedBox(height: 4),
-            Text('Delete',
-                style: TextStyle(color: Colors.white, fontSize: 11,
+            Icon(
+              isDelete ? Icons.delete_outline : Icons.archive_outlined,
+              color: Colors.white, size: 22,
+            ),
+            const SizedBox(height: 4),
+            Text(action.label,
+                style: const TextStyle(color: Colors.white, fontSize: 11,
                     fontWeight: FontWeight.w700)),
           ],
         ),
-      ),
+      );
+    }
+
+    return Dismissible(
+      key: Key('refund_${item.id}'),
+      direction: DismissDirection.horizontal,
+      confirmDismiss: (direction) {
+        final action = direction == DismissDirection.startToEnd
+            ? rightAction : leftAction;
+        return confirm(action);
+      },
+      onDismissed: (direction) {
+        final action = direction == DismissDirection.startToEnd
+            ? rightAction : leftAction;
+        if (action == SwipeAction.delete) {
+          _deleteRefund(item);
+        } else {
+          _archiveRefund(item);
+        }
+      },
+      background:          _bg(rightAction, Alignment.centerLeft,  const EdgeInsets.only(left: 20)),
+      secondaryBackground: _bg(leftAction,  Alignment.centerRight, const EdgeInsets.only(right: 20)),
       child: _AnimatedListItem(
         index: index,
         controller: _entranceCtrl,
@@ -291,36 +346,29 @@ class _DashboardScreenState extends State<DashboardScreen>
     setState(() {
       _refunds = updated;
       _rebuildDerived();
-      // Restart entrance animation so remaining tiles re-stagger
       _entranceCtrl.forward(from: 0);
     });
   }
 
-  Future<bool> _confirmDelete(BuildContext context, RefundItem item) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Delete refund?'),
-        content: Text(
-          'Remove "${item.merchantName}" (${item.formattedAmount})?\nThis cannot be undone.',
+  Future<void> _archiveRefund(RefundItem item) async {
+    await _storage.archiveRefund(item.id);
+    final all = await _storage.loadRefunds();
+    if (!mounted) return;
+    setState(() {
+      _refunds = all;
+      _rebuildDerived();
+      _entranceCtrl.forward(from: 0);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Moved to Archive'),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'View',
+          onPressed: () => context.push('/archive'),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
       ),
     );
-    return result ?? false;
   }
 
   void _scrollToRecentActivity() {
@@ -344,16 +392,19 @@ class _DashboardScreenState extends State<DashboardScreen>
       await _storage.saveRefunds(cleaned);
       await prefs.setBool('_seeded_data_cleared', true);
     }
-    final list = await _storage.loadRefunds();
+    final list = await _storage.autoArchiveCompleted(); // auto-archives completed items ≥ 1 day old
+    final swipe = await SwipeSettingsService.load();
     if (!mounted) return;
     final newAmount = list
-        .where((r) => r.status != RefundStatus.completed)
+        .where((r) => r.status != RefundStatus.completed && !r.archived)
         .fold(0.0, (sum, r) => sum + r.amount);
     setState(() {
       _countFrom = showLoader ? 0 : _countTo;
       _countTo   = newAmount;
       _refunds   = list;
       _loading   = false;
+      _swipeLeft  = swipe.left;
+      _swipeRight = swipe.right;
       _rebuildDerived();
     });
     _entranceCtrl.forward(from: 0);
