@@ -504,6 +504,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ? 'Scanning all incoming refund SMS'
               : 'Enable in sync settings to scan SMS',
           isDark: isDark,
+          onTap: _smsEnabled ? null : () => context.push('/permissions'),
         ),
         const SizedBox(height: 12),
 
@@ -523,6 +524,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           badge: _emailSyncEnabled && _approvedEmailAccount != null
               ? _approvedEmailAccount!
               : null,
+          onTap: _emailSyncEnabled ? null : () => context.push('/permissions'),
         ),
       ],
     );
@@ -815,6 +817,7 @@ class _SyncStatusCard extends StatelessWidget {
     required this.detail,
     required this.isDark,
     this.badge,
+    this.onTap,
   });
 
   final IconData icon;
@@ -825,10 +828,14 @@ class _SyncStatusCard extends StatelessWidget {
   final String detail;
   final bool isDark;
   final String? badge;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark
@@ -885,12 +892,32 @@ class _SyncStatusCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 3),
-                Text(
-                  detail,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.textMuted,
-                      ),
-                ),
+                if (onTap != null)
+                  GestureDetector(
+                    onTap: onTap,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Tap to enable in Sync Settings',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.arrow_forward_ios_rounded,
+                            size: 11, color: AppColors.primary),
+                      ],
+                    ),
+                  )
+                else
+                  Text(
+                    detail,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textMuted,
+                        ),
+                  ),
                 if (badge != null) ...[
                   const SizedBox(height: 6),
                   Container(
@@ -928,7 +955,8 @@ class _SyncStatusCard extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ), // Container
+    ); // InkWell
   }
 }
 
